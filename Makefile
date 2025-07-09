@@ -608,7 +608,9 @@ PNG_L :=
 CFLAGS += -DNO_PNG
 CPPFLAGS += -DNO_PNG
 else
-PNG_L := -lpng
+# TODO: fix this later properly for MACOS
+CPPFLAGS += -I/opt/homebrew/opt/libpng/include
+PNG_L := -L/opt/homebrew/opt/libpng/lib -lpng
 endif
 
 ifeq ($(SLINK),1)
