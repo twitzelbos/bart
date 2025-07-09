@@ -6,6 +6,7 @@
  * 2024 Philip Schaten <philip.schaten@tugraz.at>
  */
 
+#if 0 // TODO: find a better way to decide when to use pthreads or C11 threads
 #ifdef _OPENMP
 #include <threads.h>
 #endif
@@ -14,7 +15,8 @@
 
 #include "lock.h"
 
-struct bart_lock {
+struct bart_lock
+{
 #ifdef _OPENMP
 	mtx_t mx;
 #else
@@ -22,7 +24,7 @@ struct bart_lock {
 #endif
 };
 
-void bart_lock(bart_lock_t* lock)
+void bart_lock(bart_lock_t *lock)
 {
 #ifdef _OPENMP
 	mtx_lock(&lock->mx);
@@ -31,7 +33,7 @@ void bart_lock(bart_lock_t* lock)
 #endif
 }
 
-void bart_unlock(bart_lock_t* lock)
+void bart_unlock(bart_lock_t *lock)
 {
 #ifdef _OPENMP
 	mtx_unlock(&lock->mx);
@@ -40,9 +42,9 @@ void bart_unlock(bart_lock_t* lock)
 #endif
 }
 
-bart_lock_t* bart_lock_create(void)
+bart_lock_t *bart_lock_create(void)
 {
-	bart_lock_t* lock = xmalloc(sizeof *lock);
+	bart_lock_t *lock = xmalloc(sizeof *lock);
 
 #ifdef _OPENMP
 	mtx_init(&lock->mx, mtx_plain);
@@ -50,7 +52,7 @@ bart_lock_t* bart_lock_create(void)
 	return lock;
 }
 
-void bart_lock_destroy(bart_lock_t* lock)
+void bart_lock_destroy(bart_lock_t *lock)
 {
 #ifdef _OPENMP
 	mtx_destroy(&lock->mx);
@@ -58,8 +60,8 @@ void bart_lock_destroy(bart_lock_t* lock)
 	xfree(lock);
 }
 
-
-struct bart_cond {
+struct bart_cond
+{
 
 #ifdef _OPENMP
 	long counter;
@@ -69,9 +71,9 @@ struct bart_cond {
 #endif
 };
 
-bart_cond_t* bart_cond_create(void)
+bart_cond_t *bart_cond_create(void)
 {
-	bart_cond_t* cond = xmalloc(sizeof *cond);
+	bart_cond_t *cond = xmalloc(sizeof *cond);
 
 #ifdef _OPENMP
 	cnd_init(&cond->cnd);
@@ -80,7 +82,7 @@ bart_cond_t* bart_cond_create(void)
 	return cond;
 }
 
-void bart_cond_wait(bart_cond_t* cond, bart_lock_t* lock)
+void bart_cond_wait(bart_cond_t *cond, bart_lock_t *lock)
 {
 #ifdef _OPENMP
 	long counter = cond->counter;
@@ -93,7 +95,7 @@ void bart_cond_wait(bart_cond_t* cond, bart_lock_t* lock)
 #endif
 }
 
-void bart_cond_notify_all(bart_cond_t* cond)
+void bart_cond_notify_all(bart_cond_t *cond)
 {
 #ifdef _OPENMP
 	cond->counter++;
@@ -101,7 +103,7 @@ void bart_cond_notify_all(bart_cond_t* cond)
 #endif
 }
 
-void bart_cond_destroy(bart_cond_t* cond)
+void bart_cond_destroy(bart_cond_t *cond)
 {
 #ifdef _OPENMP
 	cnd_destroy(&cond->cnd);
@@ -109,3 +111,70 @@ void bart_cond_destroy(bart_cond_t* cond)
 	xfree(cond);
 }
 
+#else
+#include <pthread.h>
+#include "misc/misc.h"
+#include "lock.h"
+
+struct bart_lock
+{
+	pthread_mutex_t mx;
+};
+
+void bart_lock(bart_lock_t *lock)
+{
+	pthread_mutex_lock(&lock->mx);
+}
+
+void bart_unlock(bart_lock_t *lock)
+{
+	pthread_mutex_unlock(&lock->mx);
+}
+
+bart_lock_t *bart_lock_create(void)
+{
+	bart_lock_t *lock = xmalloc(sizeof *lock);
+	pthread_mutex_init(&lock->mx, NULL);
+	return lock;
+}
+
+void bart_lock_destroy(bart_lock_t *lock)
+{
+	pthread_mutex_destroy(&lock->mx);
+	xfree(lock);
+}
+
+struct bart_cond
+{
+	long counter;
+	pthread_cond_t cnd;
+};
+
+bart_cond_t *bart_cond_create(void)
+{
+	bart_cond_t *cond = xmalloc(sizeof *cond);
+	pthread_cond_init(&cond->cnd, NULL);
+	cond->counter = 0;
+	return cond;
+}
+
+void bart_cond_wait(bart_cond_t *cond, bart_lock_t *lock)
+{
+	long counter = cond->counter;
+
+	while (counter == cond->counter)
+		pthread_cond_wait(&cond->cnd, &lock->mx);
+}
+
+void bart_cond_notify_all(bart_cond_t *cond)
+{
+	cond->counter++;
+	pthread_cond_broadcast(&cond->cnd);
+}
+
+void bart_cond_destroy(bart_cond_t *cond)
+{
+	pthread_cond_destroy(&cond->cnd);
+	xfree(cond);
+}
+#endif
