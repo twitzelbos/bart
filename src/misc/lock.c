@@ -6,7 +6,7 @@
  * 2024 Philip Schaten <philip.schaten@tugraz.at>
  */
 
-#if 0 // TODO: find a better way to decide when to use pthreads or C11 threads
+#ifdef HAVE_C11_THREADS
 #ifdef _OPENMP
 #include <threads.h>
 #endif

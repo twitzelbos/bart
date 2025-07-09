@@ -186,6 +186,17 @@ ifneq ($(BUILDTYPE), MSYS)
 endif
 endif
 
+C11_THREADS_SUPPORTED := $(shell \
+  echo '#include <threads.h>\nint main(void) { thrd_t t; return 0; }' | \
+  $(CC) -x c -std=c11 -pthread -o /dev/null - 2>/dev/null && echo yes || echo no \
+)
+
+ifeq ($(C11_THREADS_SUPPORTED),yes)
+  CFLAGS += -DHAVE_C11_THREADS
+  CPPFLAGS += -DHAVE_C11_THREADS
+else
+  $(warning C11 threads not supported, using posix threads instead)
+endif
 
 # for debug backtraces
 ifeq ($(DEBUG_DWARF),1)
