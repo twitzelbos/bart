@@ -510,8 +510,8 @@ CFLAGS += -fopenmp
 CXXFLAGS += -fopenmp
 NVCCFLAGS += -Xcompiler -fopenmp
 else
-LDFLAGS += "-L/usr/local/opt/libomp/lib" -lomp
-CPPFLAGS += "-I/usr/local/opt/libomp/include" -Xclang -fopenmp
+LDFLAGS += "-L/opt/homebrew/opt/libomp/lib" -lomp
+CPPFLAGS += "-I/opt/homebrew/opt/libomp/include" -fopenmp
 endif
 endif
 else
