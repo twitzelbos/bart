@@ -112,69 +112,105 @@ void bart_cond_destroy(bart_cond_t *cond)
 }
 
 #else
+#ifdef _OPENMP
 #include <pthread.h>
+#endif
+
 #include "misc/misc.h"
 #include "lock.h"
 
 struct bart_lock
 {
+#ifdef _OPENMP
 	pthread_mutex_t mx;
+#else
+	int dummy; // Placeholder for non-OpenMP builds
+#endif
 };
 
 void bart_lock(bart_lock_t *lock)
 {
+#ifdef _OPENMP
 	pthread_mutex_lock(&lock->mx);
+#else
+	(void)lock;
+#endif
 }
 
 void bart_unlock(bart_lock_t *lock)
 {
+#ifdef _OPENMP
 	pthread_mutex_unlock(&lock->mx);
+#else
+	(void)lock;
+#endif
 }
 
 bart_lock_t *bart_lock_create(void)
 {
 	bart_lock_t *lock = xmalloc(sizeof *lock);
+#ifdef _OPENMP
 	pthread_mutex_init(&lock->mx, NULL);
+#endif
 	return lock;
 }
 
 void bart_lock_destroy(bart_lock_t *lock)
 {
+#ifdef _OPENMP
 	pthread_mutex_destroy(&lock->mx);
+#endif
 	xfree(lock);
 }
 
 struct bart_cond
 {
+#ifdef _OPENMP
 	long counter;
 	pthread_cond_t cnd;
+#else
+	int dummy; // Placeholder for non-OpenMP builds
+#endif
 };
 
 bart_cond_t *bart_cond_create(void)
 {
 	bart_cond_t *cond = xmalloc(sizeof *cond);
+#ifdef _OPENMP
 	pthread_cond_init(&cond->cnd, NULL);
 	cond->counter = 0;
+#endif
 	return cond;
 }
 
 void bart_cond_wait(bart_cond_t *cond, bart_lock_t *lock)
 {
+#ifdef _OPENMP
 	long counter = cond->counter;
 
 	while (counter == cond->counter)
 		pthread_cond_wait(&cond->cnd, &lock->mx);
+#else
+	(void)cond;
+	(void)lock;
+#endif
 }
 
 void bart_cond_notify_all(bart_cond_t *cond)
 {
+#ifdef _OPENMP
 	cond->counter++;
 	pthread_cond_broadcast(&cond->cnd);
+#else
+	(void)cond;
+#endif
 }
 
 void bart_cond_destroy(bart_cond_t *cond)
 {
+#ifdef _OPENMP
 	pthread_cond_destroy(&cond->cnd);
+#endif
 	xfree(cond);
 }
 #endif
