@@ -118,7 +118,7 @@ int main_trx(int argc, char* argv[argc])
 
 		stream_sync(strm_out, N, stream_pos);
 
-	} while(strm_in || md_next(N, dims, stream_flags, stream_pos));
+	} while (strm_in || md_next(N, dims, stream_flags, stream_pos));
 
 	unmap_cfl(N, dims, data);
 
@@ -129,3 +129,4 @@ int main_trx(int argc, char* argv[argc])
 
 	return 0;
 }
+

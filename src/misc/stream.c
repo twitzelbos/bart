@@ -55,6 +55,7 @@ struct stream {
 	bool binary;
 
 	const char* filename;
+	const char* fifo_name;
 
 	complex float* ptr;
 	struct pcfl* data;
@@ -283,9 +284,13 @@ stream_t stream_lookup(const complex float* ptr)
 	return s;
 }
 
-stream_t stream_lookup_name(const char* name)
+static char* stream_mangle_name(const char* name, bool in);
+
+stream_t stream_lookup_name(const char* filename, bool in)
 {
 	stream_t s = NULL;
+
+	char* name = stream_mangle_name(filename, in);
 
 #pragma omp critical(stream_ptr_lock)
 	{
@@ -300,10 +305,12 @@ stream_t stream_lookup_name(const char* name)
 			s = stream_ptr_streams[i];
 	}
 
+	xfree(name);
+
 	return s;
 }
 
-const char* stream_mangle_name(const char* name, bool in)
+static char* stream_mangle_name(const char* name, bool in)
 {
 	assert (0 != strcmp(name, "in_-"));
 	assert (0 != strcmp(name, "out_-"));
@@ -345,6 +352,9 @@ stream_t stream_create(int N, const long dims[N], int pipefd, bool input, bool b
 	// msync only makes sense for output streams that are not binary.
 	assert(!call_msync || !(input || binary));
 
+	char* fifo_name = name ? (strcmp("-", name) ? strdup(name) : NULL) : NULL;
+
+
 	PTR_ALLOC(struct stream, ret);
 
 	*ret = (struct stream) {
@@ -354,7 +364,8 @@ stream_t stream_create(int N, const long dims[N], int pipefd, bool input, bool b
 		.binary = binary,
 		.call_msync = call_msync,
 		.last_index = -1,
-		.filename = (NULL == name) ? NULL : strdup(name),
+		.filename = (NULL == name) ? NULL : stream_mangle_name(name, input),
+		.fifo_name = fifo_name,
 		.cond = bart_cond_create(),
 	};
 
@@ -410,6 +421,8 @@ static void stream_del(const struct shared_obj_s* sptr)
 
 	stream_deregister(s);
 
+	stream_stop_log(s);
+
 	if (s->pipefd > 1)
 		close(s->pipefd);
 
@@ -431,9 +444,12 @@ static void stream_del(const struct shared_obj_s* sptr)
 	if (NULL != s->filename)
 		xfree(s->filename);
 
-	stream_event_list_free(s->events);
+	if (s->fifo_name && s->input)
+		unlink(s->fifo_name);
 
-	stream_stop_log(s);
+	xfree(s->fifo_name);
+
+	stream_event_list_free(s->events);
 
 	xfree(s);
 }
@@ -459,43 +475,61 @@ void stream_attach(stream_t s, complex float* x, bool unmap, bool regist)
 	}
 }
 
+void stream_ensure_fifo(const char* name)
+{
+	struct stat statbuf = { };
+	if (0 != stat(name, &statbuf))
+		mkfifo(name, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
+
+	if (0 != stat(name, &statbuf))
+		error("stat / mkfifo.\n");
+
+	if (S_IFIFO != (statbuf.st_mode & S_IFMT))
+		error(".fifo-file is not a FIFO!\n");
+}
 
 stream_t stream_load_file(const char* name, int D, long dims[D], char **datname)
 {
 	int fd = 0;
-	char hdr[IO_MAX_HDR_SIZE] = { '\0' };
 	bool is_stdin = (0 == strcmp(name, "-"));
 
-	bool binary = false;
+	if (!is_stdin) {
 
-	if (!is_stdin)
+		stream_ensure_fifo(name);
 		fd = open(name, O_RDONLY);
+	}
 
 	if (-1 == fd)
 		error("Opening FIFO %s\n", name);
 
 	assert (!is_stdin || NULL == stdin_command_line);
 
+	stream_t strm = stream_load_fd(fd, name, D, dims, datname, is_stdin ? &stdin_command_line : NULL);
+
+	if (!strm)
+		error("Reading input from %s\n", name);
+
+	return strm;
+}
+
+stream_t stream_load_fd(int fd, const char* name, int D, long dims[D], char **datname, char** cmdline)
+{
+	char hdr[IO_MAX_HDR_SIZE] = { '\0' };
+	bool binary = false;
+
 	// read header from pipe
-	int hdr_bytes = read_cfl_header2(ARRAY_SIZE(hdr) - 1, hdr, fd, datname, is_stdin ? &stdin_command_line : NULL, D, dims);
+	int hdr_bytes = read_cfl_header2(ARRAY_SIZE(hdr) - 1, hdr, fd, name, datname, cmdline, D, dims);
 
 	if (-1 == hdr_bytes)
-		error("Reading input from %s\n", name);
+		return NULL;
 
 	if (NULL == *datname)
 		binary = true;
 
-	const char* stream_name = stream_mangle_name(name, true);
+	stream_t strm = stream_create(D, dims, fd, true, binary, 0, name, false);
 
-	stream_t strm = stream_create(D, dims, fd, true, binary, 0, stream_name, false);
-
-	xfree(stream_name);
-
-	if (NULL == strm)
-		error("Could not create stream for %s\n", name);
-
-	if (!is_stdin && (0 != unlink(name)))
-		error("Unlinking temporary FIFO header %s\n", name);
+	if (!strm)
+		return NULL;
 
 #ifdef __EMSCRIPTEN__
 	if (!binary) {
@@ -536,29 +570,17 @@ stream_t stream_create_file(const char* name, int D, long dims[D], unsigned long
 
 	if (!is_stdout) {
 
-		struct stat statbuf;
-
-		if (0 != stat(name, &statbuf)) {
-
-			if (NULL != dataname)
-				unlink(dataname);
-			error("Fifo %s does not exist. Create manually before starting BART!\n", name);
-		}
-
+		stream_ensure_fifo(name);
 		fd = open(name, O_WRONLY);
 	}
 
 	if (-1 == fd)
 		error("Opening FIFO %s\n", name);
 
-	if (-1 == write_stream_header(fd, is_stdout ? NULL : name, dataname, D, dims))
+	if (-1 == write_stream_header(fd, dataname, D, dims))
 		error("Writing header of %s\n", name);
 
-	const char* stream_name = stream_mangle_name(name, false);
-
-	stream_t strm = stream_create(D, dims, fd, false, binary, stream_flags, stream_name, call_msync);
-
-	xfree(stream_name);
+	stream_t strm = stream_create(D, dims, fd, false, binary, stream_flags, name, call_msync);
 
 	return strm;
 }
@@ -1270,7 +1292,9 @@ static void stream_init_log(stream_t s)
 	snprintf(logfile_path, logfile_len, "%s%s%s", streamlog_prefix, s->filename, suffix2);
 
 	s->stream_logfile = fopen(logfile_path, "a");
-	assert(s->stream_logfile);
+	if (!s->stream_logfile)
+		error("Failed to open stream logfile with 'a' flag: %s.\n", logfile_path);
+
 	xfree(logfile_path);
 
 	s->stream_ts = xmalloc(sizeof(double) * (unsigned long)s->data->tot);

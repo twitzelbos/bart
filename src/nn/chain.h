@@ -1,6 +1,6 @@
 
-#ifndef NN_CHAIN_H
-#define NN_CHAIN_H
+#ifndef _NN_CHAIN_H
+#define _NN_CHAIN_H
 
 #include "nn/nn.h"
 
@@ -22,6 +22,7 @@ extern nn_t nn_permute_inputs(nn_t x, int I2, const int perm[__VLA(I2)]);
 extern nn_t nn_permute_outputs(nn_t x, int O2, const int perm[__VLA(O2)]);
 extern nn_t nn_permute_inputs_F(nn_t x, int I2, const int perm[__VLA(I2)]);
 extern nn_t nn_permute_outputs_F(nn_t x, int O2, const int perm[__VLA(O2)]);
+extern nn_t nn_sort_args_F(nn_t op);
 extern nn_t nn_dup(nn_t x, int a, const char* aname, int b, const char* bname);
 extern nn_t nn_dup_F(nn_t x, int a, const char* aname, int b, const char* bname);
 extern nn_t nn_stack_inputs(nn_t x, int a, const char* aname, int b, const char* bname, int stack_dim);
@@ -66,3 +67,4 @@ extern nn_t nn_real_output_F(nn_t op, int o, const char* oname);
 extern nn_t nn_stack_multigpu_F(int N , nn_t x[N], int stack_dim);
 
 #endif
+

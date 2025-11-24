@@ -36,8 +36,7 @@ static int blocksize(long N)
 	return BLOCKSIZE;
 }
 
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#undef SWAP
 #define SWAP(x, y) { __typeof(x) temp = x; x = y; y = temp; }
 
 static long gridsize(long N)
@@ -961,6 +960,21 @@ __global__ void kern_zatanr(long N, cuFloatComplex* dst, const cuFloatComplex* s
 extern "C" void cuda_zatanr(long N, _Complex float* dst, const _Complex float* src)
 {
 	kern_zatanr<<<gridsize(N), blocksize(N), 0, cuda_get_stream()>>>(N, (cuFloatComplex*)dst, (const cuFloatComplex*)src);
+	CUDA_KERNEL_ERROR;
+}
+
+__global__ void kern_zatan2r(long N, cuFloatComplex* dst, const cuFloatComplex* src1, const cuFloatComplex* src2)
+{
+	int start = threadIdx.x + blockDim.x * blockIdx.x;
+	int stride = blockDim.x * gridDim.x;
+
+	for (long i = start; i < N; i += stride)
+		dst[i] = make_cuFloatComplex(atan2f(cuCrealf(src1[i]), cuCrealf(src2[i])), 0.);
+}
+
+extern "C" void cuda_zatan2r(long N, _Complex float* dst, const _Complex float* src1, const _Complex float* src2)
+{
+	kern_zatan2r<<<gridsize(N), blocksize(N), 0, cuda_get_stream()>>>(N, (cuFloatComplex*)dst, (const cuFloatComplex*)src1, (const cuFloatComplex*)src2);
 	CUDA_KERNEL_ERROR;
 }
 

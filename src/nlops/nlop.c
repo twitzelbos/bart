@@ -408,6 +408,27 @@ struct nlop_s* nlop_create(int ON, const long odims[ON], int IN, const long idim
 }
 
 
+struct nlop_s* nlop_from_ops(const struct operator_s* op, int OO, int II, const struct linop_s* der[II][OO])
+{
+	assert(II == operator_nr_in_args(op));
+	assert(OO == operator_nr_out_args(op));
+
+	PTR_ALLOC(struct nlop_s, n);
+
+	const struct linop_s* (*nder)[II?:1][OO?:1] = TYPE_ALLOC(const struct linop_s*[II?:1][OO?:1]);
+	n->derivative = &(*nder)[0][0];
+
+	for (int i = 0; i < II; i++)
+		for (int o = 0; o < OO; o++)
+			(*nder)[i][o] = linop_clone(der[i][o]);
+
+	n->op = operator_ref(op);
+
+	return PTR_PASS(n);
+}
+
+
+
 int nlop_get_nr_in_args(const struct nlop_s* op)
 {
 	return operator_nr_in_args(op->op);
@@ -579,6 +600,26 @@ void nlop_generic_apply_unchecked(const struct nlop_s* op, int N, void* args[N])
 	operator_generic_apply_unchecked(op->op, N, args);
 }
 
+void nlop_generic_apply_select_derivative_array_unchecked(const struct nlop_s* op, int OO, int II, void* args[OO + II], bool select_der[II][OO])
+{
+	assert(II == nlop_get_nr_in_args(op));
+	assert(OO == nlop_get_nr_out_args(op));
+
+	bool select_all[II?:1][OO?:1];
+
+	for(int o = 0; o < OO; o++)
+		for(int i = 0; i < II; i++)
+			select_all[i][o] = true;
+
+	nlop_clear_derivatives(op);
+	nlop_unset_derivatives(op);
+	nlop_set_derivatives(op, II, OO, select_der);
+
+	nlop_generic_apply_unchecked(op, OO + II, args);
+
+	nlop_set_derivatives(op, II, OO, select_all);
+}
+
 void nlop_generic_apply_select_derivative_unchecked(const struct nlop_s* op, int N, void* args[N], unsigned long out_der_flag, unsigned long in_der_flag)
 {
 	int II = nlop_get_nr_in_args(op);
@@ -588,23 +629,12 @@ void nlop_generic_apply_select_derivative_unchecked(const struct nlop_s* op, int
 	assert((unsigned int)OO <= CHAR_BIT * sizeof(in_der_flag));
 
 	bool select_der[II?:1][OO?:1];
-	bool select_all[II?:1][OO?:1];
 
-	for(int o = 0; o < OO; o++) {
-		for(int i = 0; i < II; i++) {
-
+	for(int o = 0; o < OO; o++)
+		for(int i = 0; i < II; i++)
 			select_der[i][o] = MD_IS_SET(out_der_flag, o) && MD_IS_SET(in_der_flag, i);
-			select_all[i][o] = true;
-		}
-	}
 
-	nlop_clear_derivatives(op);
-	nlop_unset_derivatives(op);
-	nlop_set_derivatives(op, II, OO, select_der);
-
-	nlop_generic_apply_unchecked(op, N, args);
-
-	nlop_set_derivatives(op, II, OO, select_all);
+	nlop_generic_apply_select_derivative_array_unchecked(op, OO, II, args, select_der);
 }
 
 void nlop_generic_apply_no_derivative_unchecked(const struct nlop_s* op, int N, void* args[N])

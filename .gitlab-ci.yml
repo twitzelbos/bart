@@ -217,8 +217,6 @@ Build_Analyzer:
       - "./lib/*.a"
       - ./commands/
     expire_in: 45 minutes
-  allow_failure: true
-
 
 
 Build_Tensorflow:
@@ -236,6 +234,22 @@ Build_Tensorflow:
       - "./src/*.o"
       - ./src/misc/version.inc
     expire_in: 45 minutes
+
+
+Build_Pytorch:
+  stage: build
+  script:
+    #    - apt-get install -y libtorch-dev
+    - PYTORCH=1 make all
+  artifacts:
+    paths:
+      - bart
+      - "./lib/*.a"
+      - ./commands/
+      - "./src/*.o"
+      - ./src/misc/version.inc
+    expire_in: 45 minutes
+
 
 
 Build_wasm:
@@ -404,7 +418,7 @@ IntTest_riscv:
     - riscv
   image: registry.gitlab.tugraz.at/ibi/reproducibility/gitlab-ci-containers/ibi_riscv_noroot
   script:
-    - AUTOCLEAN=0 AGUE_REF=/reference_data/ make -Otarget -j 4 test testague
+    - AUTOCLEAN=0 make -Otarget -j 4 test
   needs: [Build_riscv]
   dependencies:
     - Build_riscv
@@ -463,7 +477,7 @@ IntTest_UBSan:
 IntTest_MPI:
   stage: test2
   script:
-    - AUTOCLEAN=0 MPI=1 make testslow
+    - AUTOCLEAN=0 MPI=1 make mpitest
   needs: [Build_MPI]
   dependencies:
     - Build_MPI
@@ -592,6 +606,20 @@ RockyLinux_9:
     - make all -j8
     - make utest -j8
 
+RockyLinux_10:
+  variables:
+    DEBUG: "0"
+    DEBUG_DWARF: "0"
+  rules:
+    - if: $CI_DISTRO_TESTS == "1"
+  stage: distro_build
+  image: docker.io/rockylinux:10
+  script:
+    - dnf --enablerepo=crb install -y fftw-devel openblas-devel libpng-devel lapack-devel gcc
+    - echo -e -n "OPENBLAS=1\nCPPFLAGS=-Wall -Wextra -I/usr/include/openblas\n" > Makefiles/Makefile.local
+    - make all -j8
+    - make utest -j8
+
 Ubuntu_22.04:
   variables:
     DEBUG: "0"
@@ -635,3 +663,4 @@ Arch_Latest:
     - make all -j8
     - make utest -j8
   allow_failure: true
+

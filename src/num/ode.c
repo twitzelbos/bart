@@ -3,62 +3,115 @@
  * a BSD-style license which can be found in the LICENSE file.
  */
 
+#include <assert.h>
 #include <math.h>
 #include <stdlib.h>
 
 #include "misc/nested.h"
 
+#include "num/linalg.h"
 #include "num/quadrature.h"
-
-// #include "iter/vec_iter.h"
 
 #include "ode.h"
 
 
-static void vec_saxpy(int N, float dst[N], const float a[N], float alpha, const float b[N])
+#if 0
+static void euler(float h, int N, float x[N], float st, float end,
+	void CLOSURE_TYPE(f)(int N, float (*matrix)[N][N], float t))
 {
-	for (int i = 0; i < N; i++)
-		dst[i] = a[i] + alpha * b[i];
+	for (float t = st; t < end; ) {
+
+		float A[N][N];
+		NESTED_CALL(f, (N, &A, t));
+
+		float tmp[N];
+
+		matf_vecmul(N, N, tmp, A, x);
+
+		t += h;
+
+		vecf_saxpy(N, x, h, tmp);
+
+		if (t + h > end)
+			h = end - t;
+	}
+}
+#endif
+
+void crank_nicolson(float h, int N, float x[N], float st, float end,
+	void CLOSURE_TYPE(f)(int N, float (*matrix)[N][N], float t))
+{
+	for (float t = st; t < end; ) {
+
+		float A[N][N];
+		NESTED_CALL(f, (N, &A, t + h / 2.));
+
+		/* (x_n - x_{n-1}) / dt = A (x_n + x_{n-1}) / 2
+		 * x_n - dt / 2 A x_n = x_{n-1} + dt / 2 A x_{n-1}
+		 * (I - dt / 2 A) x_n = (I + dt / 2 A) x_{n-1}
+		 * x_{n} = (I - dt / 2 A)^{-1} (I + dt / 2 A) x_{n-1}
+		 */
+
+		float B[N][N];
+
+		for (int i = 0; i < N; i++)
+			for (int j = 0; j < N; j++)
+				B[i][j] = (i == j) + h * A[i][j] / 2.;
+
+		float tmp[N];
+		matf_vecmul(N, N, tmp, B, x);
+
+		t += h;
+
+		for (int i = 0; i < N; i++)
+			for (int j = 0; j < N; j++)
+				B[i][j] = (i == j) - h * A[i][j] / 2.;
+#ifndef NO_LAPACK
+		matf_solve(N, x, B, tmp);
+#else
+		assert(0);
+#endif
+		if (t + h > end)
+			h = end - t;
+	}
 }
 
-static void vec_copy(int N, float dst[N], const float src[N])
+
+void crank_nicolson_matrix(float h, int N, float x[N], float st, float end, const float matrix[N][N])
 {
-	vec_saxpy(N, dst, src, 0., src);
+#ifdef __clang__
+	const void* matrix2 = matrix;	// clang workaround
+#endif
+	NESTED(void, ode_matrix_fun, (int N, float (*A)[N][N], float t))
+	{
+		(void)t;
+#ifdef __clang__
+		const float (*matrix)[N] = matrix2;
+#endif
+		matf_copy(N, N, *A, matrix);
+	};
+
+	crank_nicolson(h, N, x, st, end, ode_matrix_fun);
 }
-
-static float vec_sdot(int N, const float a[N], const float b[N])
-{
-	float ret = 0.;
-
-	for (int i = 0; i < N; i++)
-		ret += a[i] * b[i];
-
-	return ret;
-}
-
-static float vec_norm(int N, const float x[N])
-{
-	return sqrtf(vec_sdot(N, x, x));
-}
-
 
 
 #define tridiag(s) (s * (s + 1) / 2)
 
 static void runge_kutta_step(float h, int s, const float a[tridiag(s)], const float b[s], const float c[s - 1], int N, int K, float k[K][N], float ynp[N], float tmp[N], float tn, const float yn[N], void CLOSURE_TYPE(f)(float* out, float t, const float* yn))
 {
-	vec_saxpy(N, ynp, yn, h * b[0], k[0]);
+	vecf_copy(N, ynp, yn);
+	vecf_saxpy(N, ynp, h * b[0], k[0]);
 
 	for (int l = 0, t = 1; t < s; t++) {
 
-		vec_copy(N, tmp, yn);
+		vecf_copy(N, tmp, yn);
 
 		for (int r = 0; r < t; r++, l++)
-			vec_saxpy(N, tmp, tmp, h * a[l], k[r % K]);
+			vecf_saxpy(N, tmp, h * a[l], k[r % K]);
 
 		NESTED_CALL(f, (k[t % K], tn + h * c[t - 1], tmp));
 
-		vec_saxpy(N, ynp, ynp, h * b[t], k[t % K]);
+		vecf_saxpy(N, ynp, h * b[t], k[t % K]);
 	}
 }
 
@@ -148,8 +201,8 @@ float dormand_prince_step2(float h, int N, float ynp[N], float tn, const float y
 	float tmp[N];
 	runge_kutta_step(h, 7, a, b, c, N, 6, k, ynp, tmp, tn, yn, f);
 
-	vec_saxpy(N, tmp, tmp, -1., ynp);
-	return vec_norm(N, tmp);
+	vecf_saxpy(N, tmp, -1., ynp);
+	return vecf_norm(N, tmp);
 }
 
 

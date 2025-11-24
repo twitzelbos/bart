@@ -21,71 +21,72 @@
 #include "num/matexp.h"
 #include "num/ode.h"
 
+#include "seq/pulse.h"
+
 #include "simu/bloch.h"
-#include "simu/pulse.h"
 
 #include "simulation.h"
 
 
 void debug_sim(struct sim_data* data)
 {
-        debug_printf(DP_INFO, "Simulation-Debug-Output\n\n");
-        debug_printf(DP_INFO, "Voxel-Parameter:\n");
-        debug_printf(DP_INFO, "\tNumber of Pools:%d\n\n", data->voxel.P);
-        debug_printf(DP_INFO, "\tR1:%f\n\n", data->voxel.r1[0]);
-        debug_printf(DP_INFO, "\tR2:%f\n\n", data->voxel.r2[0]);
-        debug_printf(DP_INFO, "\tM0:%f\n", data->voxel.m0[0]);
-        debug_printf(DP_INFO, "\tOm:%f\n\n", data->voxel.Om[0]);
-        debug_printf(DP_INFO, "\tR2_2:%f \tR2_3:%f\t R2_4:%f\t R2_5:%f\n\n", data->voxel.r2[1], data->voxel.r2[2],data->voxel.r2[3],data->voxel.r2[4]);
-        debug_printf(DP_INFO, "\tR1_2:%f \tR1_3:%f\t R1_4:%f\t R1_5:%f\n\n", data->voxel.r1[1], data->voxel.r1[2],data->voxel.r1[3],data->voxel.r1[4]);
-        debug_printf(DP_INFO, "\tM0_2:%f \tM0_3:%f \tM0_4:%f \tM0_5:%f\n", data->voxel.m0[1], data->voxel.m0[2], data->voxel.m0[3], data->voxel.m0[4]);
-        debug_printf(DP_INFO, "\tOm_2:%f \tOm_3:%f \tOm_4:%f \tOm_5:%f\n", data->voxel.Om[1], data->voxel.Om[2], data->voxel.Om[3], data->voxel.Om[4]);
-        debug_printf(DP_INFO, "\tk[0]:%f\n\n", data->voxel.k[0]);
-        debug_printf(DP_INFO, "\tk[1]:%f\n\n", data->voxel.k[1]);
-        debug_printf(DP_INFO, "\tk[2]:%f\n\n", data->voxel.k[2]);
-        debug_printf(DP_INFO, "\tk[3]:%f\n\n", data->voxel.k[3]);
-        debug_printf(DP_INFO, "\tw:%f\n", data->voxel.w);
-        debug_printf(DP_INFO, "\tB1:%f\n\n", data->voxel.b1);
+	debug_printf(DP_INFO, "Simulation-Debug-Output\n\n");
+	debug_printf(DP_INFO, "Voxel-Parameter:\n");
+	debug_printf(DP_INFO, "\tNumber of Pools:%d\n\n", data->voxel.P);
+	debug_printf(DP_INFO, "\tR1:%f\n\n", data->voxel.r1[0]);
+	debug_printf(DP_INFO, "\tR2:%f\n\n", data->voxel.r2[0]);
+	debug_printf(DP_INFO, "\tM0:%f\n", data->voxel.m0[0]);
+	debug_printf(DP_INFO, "\tOm:%f\n\n", data->voxel.Om[0]);
+	debug_printf(DP_INFO, "\tR2_2:%f \tR2_3:%f\t R2_4:%f\t R2_5:%f\n\n", data->voxel.r2[1], data->voxel.r2[2],data->voxel.r2[3],data->voxel.r2[4]);
+	debug_printf(DP_INFO, "\tR1_2:%f \tR1_3:%f\t R1_4:%f\t R1_5:%f\n\n", data->voxel.r1[1], data->voxel.r1[2],data->voxel.r1[3],data->voxel.r1[4]);
+	debug_printf(DP_INFO, "\tM0_2:%f \tM0_3:%f \tM0_4:%f \tM0_5:%f\n", data->voxel.m0[1], data->voxel.m0[2], data->voxel.m0[3], data->voxel.m0[4]);
+	debug_printf(DP_INFO, "\tOm_2:%f \tOm_3:%f \tOm_4:%f \tOm_5:%f\n", data->voxel.Om[1], data->voxel.Om[2], data->voxel.Om[3], data->voxel.Om[4]);
+	debug_printf(DP_INFO, "\tk[0]:%f\n\n", data->voxel.k[0]);
+	debug_printf(DP_INFO, "\tk[1]:%f\n\n", data->voxel.k[1]);
+	debug_printf(DP_INFO, "\tk[2]:%f\n\n", data->voxel.k[2]);
+	debug_printf(DP_INFO, "\tk[3]:%f\n\n", data->voxel.k[3]);
+	debug_printf(DP_INFO, "\tw:%f\n", data->voxel.w);
+	debug_printf(DP_INFO, "\tB1:%f\n\n", data->voxel.b1);
 
-        debug_printf(DP_INFO, "Seq-Parameter:\n");
-        debug_printf(DP_INFO, "\tSimulation Type:%d\n", data->seq.type);
-        debug_printf(DP_INFO, "\tSequence:%d\n", data->seq.seq_type);
-        debug_printf(DP_INFO, "\tModel:%d\n\n", data->seq.model);
-        debug_printf(DP_INFO, "\tTR:%f\n", data->seq.tr);
-        debug_printf(DP_INFO, "\tTE:%f\n", data->seq.te);
-        debug_printf(DP_INFO, "\t#Rep:%d\n", data->seq.rep_num);
-        debug_printf(DP_INFO, "\t#Spins:%d\n", data->seq.spin_num);
-        debug_printf(DP_INFO, "\tIPL:%f\n", data->seq.inversion_pulse_length);
-        debug_printf(DP_INFO, "\tISP:%f\n", data->seq.inversion_spoiler);
-        debug_printf(DP_INFO, "\tPPL:%f\n", data->seq.prep_pulse_length);
-        debug_printf(DP_INFO, "\tAveraged Spokes:%d\n", data->seq.averaged_spokes);
-        debug_printf(DP_INFO, "\tSlice Thickness:%f m\n", data->seq.slice_thickness);
+	debug_printf(DP_INFO, "Seq-Parameter:\n");
+	debug_printf(DP_INFO, "\tSimulation Type:%d\n", data->seq.type);
+	debug_printf(DP_INFO, "\tSequence:%d\n", data->seq.seq_type);
+	debug_printf(DP_INFO, "\tModel:%d\n\n", data->seq.model);
+	debug_printf(DP_INFO, "\tTR:%f\n", data->seq.tr);
+	debug_printf(DP_INFO, "\tTE:%f\n", data->seq.te);
+	debug_printf(DP_INFO, "\t#Rep:%d\n", data->seq.rep_num);
+	debug_printf(DP_INFO, "\t#Spins:%d\n", data->seq.spin_num);
+	debug_printf(DP_INFO, "\tIPL:%f\n", data->seq.inversion_pulse_length);
+	debug_printf(DP_INFO, "\tISP:%f\n", data->seq.inversion_spoiler);
+	debug_printf(DP_INFO, "\tPPL:%f\n", data->seq.prep_pulse_length);
+	debug_printf(DP_INFO, "\tAveraged Spokes:%d\n", data->seq.averaged_spokes);
+	debug_printf(DP_INFO, "\tSlice Thickness:%f m\n", data->seq.slice_thickness);
 	debug_printf(DP_INFO, "\tNominal Slice Thickness:%f m\n", data->seq.nom_slice_thickness);
-        debug_printf(DP_INFO, "\tPulse Applied?:%d\n\n", data->seq.pulse_applied);
+	debug_printf(DP_INFO, "\tPulse Applied?:%d\n\n", data->seq.pulse_applied);
 
-        debug_printf(DP_INFO, "Gradient-Parameter:\n");
-        debug_printf(DP_INFO, "\tMoment:%f\n", data->grad.mom);
-        debug_printf(DP_INFO, "\tSlice-Selection Gradient Strength:%f T/m\n", data->grad.sl_gradient_strength);
-        debug_printf(DP_INFO, "\tMoment SL:%f\n\n", data->grad.mom_sl);
+	debug_printf(DP_INFO, "Gradient-Parameter:\n");
+	debug_printf(DP_INFO, "\tMoment:%f\n", data->grad.mom);
+	debug_printf(DP_INFO, "\tSlice-Selection Gradient Strength:%f T/m\n", data->grad.sl_gradient_strength);
+	debug_printf(DP_INFO, "\tMoment SL:%f\n\n", data->grad.mom_sl);
 
-        debug_printf(DP_INFO, "Pulse-Parameter:\n");
-        debug_printf(DP_INFO, "\tRF-Start:%f\n", data->pulse.rf_start);
-        debug_printf(DP_INFO, "\tRF-End:%f\n", data->pulse.rf_end);
-        debug_printf(DP_INFO, "\tFlipangle:%f\n", CAST_UP(&data->pulse.sinc)->flipangle);
-        debug_printf(DP_INFO, "\tPhase:%f\n", data->pulse.phase);
-        debug_printf(DP_INFO, "\tBWTP:%f\n", data->pulse.sinc.bwtp);
-        debug_printf(DP_INFO, "\tAlpha:%f\n", data->pulse.sinc.alpha);
-        debug_printf(DP_INFO, "\tA:%f\n\n", data->pulse.sinc.A);
+	debug_printf(DP_INFO, "Pulse-Parameter:\n");
+	debug_printf(DP_INFO, "\tRF-Start:%f\n", data->pulse.rf_start);
+	debug_printf(DP_INFO, "\tRF-End:%f\n", data->pulse.rf_end);
+	debug_printf(DP_INFO, "\tFlipangle:%f\n", CAST_UP(&data->pulse.sinc)->flipangle);
+	debug_printf(DP_INFO, "\tPhase:%f\n", data->pulse.phase);
+	debug_printf(DP_INFO, "\tBWTP:%f\n", data->pulse.sinc.bwtp);
+	debug_printf(DP_INFO, "\tAlpha:%f\n", data->pulse.sinc.alpha);
+	debug_printf(DP_INFO, "\tA:%f\n\n", data->pulse.sinc.A);
 
-        debug_printf(DP_INFO, "Inversion Pulse-Parameter:\n");
-        debug_printf(DP_INFO, "\tA0:%f\n", data->pulse.hs.a0);
-        debug_printf(DP_INFO, "\tBeta:%f\n", data->pulse.hs.beta);
-        debug_printf(DP_INFO, "\tMu:%f\n", data->pulse.hs.mu);
-        debug_printf(DP_INFO, "\tDuration:%f\n", CAST_UP(&data->pulse.hs)->duration);
+	debug_printf(DP_INFO, "Inversion Pulse-Parameter:\n");
+	debug_printf(DP_INFO, "\tA0:%f\n", data->pulse.hs.a0);
+	debug_printf(DP_INFO, "\tBeta:%f\n", data->pulse.hs.beta);
+	debug_printf(DP_INFO, "\tMu:%f\n", data->pulse.hs.mu);
+	debug_printf(DP_INFO, "\tDuration:%f\n", CAST_UP(&data->pulse.hs)->duration);
 
-        debug_printf(DP_INFO, "Other Parameter:\n");
-        debug_printf(DP_INFO, "\tODE Tolerance:%f\n", data->other.ode_tol);
-        debug_printf(DP_INFO, "\tPulse Sampling Rate:%f Hz\n", data->other.sampling_rate);
+	debug_printf(DP_INFO, "Other Parameter:\n");
+	debug_printf(DP_INFO, "\tODE Tolerance:%f\n", data->other.ode_tol);
+	debug_printf(DP_INFO, "\tPulse Sampling Rate:%f Hz\n", data->other.sampling_rate);
 }
 
 
@@ -107,7 +108,7 @@ const struct simdata_voxel simdata_voxel_defaults = {
 
 const struct simdata_seq simdata_seq_defaults = {
 
-        .type = SIM_ODE,
+	.type = SIM_ODE,
 	.seq_type = SEQ_BSSFP,
 	.model = MODEL_BLOCH,
 
@@ -116,17 +117,17 @@ const struct simdata_seq simdata_seq_defaults = {
 	.rep_num = 1,
 	.spin_num = 1,
 
-        .perfect_inversion = false,
+	.perfect_inversion = false,
 	.inversion_pulse_length = 0.01,
-        .inversion_spoiler = 0.,
+	.inversion_spoiler = 0.,
 
 	.prep_pulse_length = 0.002,
 
-        .averaged_spokes = 1,
-        .slice_thickness = 0.,
+	.averaged_spokes = 1,
+	.slice_thickness = 0.,
 	.nom_slice_thickness = 0.001,
 
-        .pulse_applied = false,
+	.pulse_applied = false,
 };
 
 
@@ -134,7 +135,7 @@ const struct simdata_seq simdata_seq_defaults = {
 const struct simdata_grad simdata_grad_defaults = {
 
 	.gb = { 0., 0., 0. },
-        .sl_gradient_strength = 0.,
+	.sl_gradient_strength = 0.,
 	.mom = 0.,
 	.mom_sl = 0.,
 };
@@ -206,12 +207,24 @@ static void compute_fields(struct sim_data* data, float gb_eff[3], float t)
 			ps = CAST_UP(&data->pulse.sinc);
 			break;
 
+		case PULSE_SINC_SMS:
+			ps = CAST_UP(&data->pulse.sms);
+			break;
+
 		case PULSE_HS:
 			ps = CAST_UP(&data->pulse.hs);
 			break;
 
 		case PULSE_REC:
 			ps = CAST_UP(&data->pulse.rect);
+			break;
+
+		case PULSE_ARB:
+			ps = CAST_UP(&data->pulse.arb);
+			break;
+
+		case PULSE_GAUSS:
+			ps = CAST_UP(&data->pulse.gauss);
 			break;
 		}
 
@@ -913,6 +926,7 @@ void inversion(const struct sim_data* data, float h, float tol, int N, int P, fl
 		inv_data.pulse.type = PULSE_HS;
 
                 inv_data.pulse.hs = pulse_hypsec_defaults;
+                pulse_hypsec_init(GYRO, &inv_data.pulse.hs);
                 CAST_UP(&inv_data.pulse.hs)->duration = data->seq.inversion_pulse_length;
                 inv_data.pulse.rf_end = data->seq.inversion_pulse_length;
 
@@ -992,7 +1006,7 @@ static void cest_seq(struct sim_data* data, float h, float tol, int N, int P, fl
 		rf_pulse(data, h, tol, N, P, xp, NULL);
 		data->voxel.w = 0.;
 
-		if ( (data->cest.n_pulses - 1 > p) && (0. < data->cest.t_d) )
+		if ((data->cest.n_pulses - 1 > p) && (0. < data->cest.t_d))
 			relaxation2(data, h, tol, N, P, xp, 0, data->cest.t_d, NULL, 0.);
 	}
 

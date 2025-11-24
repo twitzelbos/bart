@@ -13,8 +13,6 @@
  * 2017-2018    Damien Nguyen <damien.nguyen@alumni.epfl.ch>
  */
 
-#define _GNU_SOURCE
-
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -141,7 +139,7 @@ void debug_vprintf(int level, const char* fmt, va_list ap)
 
 	if (level <= debug_level) {
 
-		FILE* ofp = (level < DP_INFO) ? stderr : stdout;
+		FILE* ofp = stderr;
 
 		if (debug_logging) {
 
@@ -160,13 +158,8 @@ void debug_vprintf(int level, const char* fmt, va_list ap)
 				errno = 0;
 				long r = strtol(str, NULL, 10);
 
-				if ((errno == 0) && (1 <= r)) {
-
-					ofp = stderr;
+				if ((errno == 0) && (1 <= r))
 					cmd = ptr_printf(" (%s)", command_line ?: "bart wrapper");
-				}
-
-				errno = 0;
 			}
 
 			if (level < DP_INFO) {

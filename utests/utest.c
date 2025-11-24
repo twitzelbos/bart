@@ -16,6 +16,7 @@
 
 #include "num/init.h"
 #include "num/mpi_ops.h"
+#include "num/rand.h"
 
 #include "utest.h"
 
@@ -85,7 +86,11 @@ int main(int argc, char* argv[])
 #ifdef UTEST_GPU
 	bart_use_gpu = true;
 	num_init_gpu_support();
+#else
+	num_init();
 #endif
+
+	num_rand_init(0ULL);
 
 	for (ut_test_f** ptr = &_utests_begin; ptr != &_utests_end; ptr++) {
 

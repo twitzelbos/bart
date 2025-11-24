@@ -1,14 +1,10 @@
 /* Copyright 2016. Martin Uecker.
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
- *
- * Authors:
- * 2016 Martin Uecker <martin.uecker@med.uni-goettingen.de>
  */
 
-
-#ifndef __TYPES_H
-#define __TYPES_H
+#ifndef _TYPES_H
+#define _TYPES_H
 
 #include <stddef.h>
 #include <stdnoreturn.h>
@@ -49,8 +45,8 @@ extern __attribute__((noreturn)) void error(const char* str, ...);
 typedef const struct typeid_s { int size; const char* name; } TYPEID;
 
 #define TYPEID2(T) (T ## _TYPEID)
-#define TYPEID(T) (*({ extern TYPEID T ## _TYPEID; &T ## _TYPEID; }))
-#define DEF_TYPEID(T) TYPEID T ## _TYPEID = { .size = sizeof(struct T), .name = "" #T "" };
+#define TYPEID(T) (* __extension__ ({ extern TYPEID T ## _TYPEID; &T ## _TYPEID; }))
+#define DEF_TYPEID(T) TYPEID T ## _TYPEID = { .size = sizeof(struct T), .name = "" #T "" }
 #define SET_TYPEID(T, x) (TYPE_CHECK(struct T*, x)->super.TYPEID = &TYPEID(T))
 
 #define SIZEOF(x) (size_t)((x)->TYPEID->size)

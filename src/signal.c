@@ -3,7 +3,6 @@
  * a BSD-style license which can be found in the LICENSE file.
  */
 
-
 #include <math.h>
 #include <complex.h>
 
@@ -122,9 +121,9 @@ int main_signal(int argc, char* argv[argc])
 		OPT_FLOAT('t', &time_T1relax, "T1 relax", "T1 relax period (second) for MOLLI"),
 		OPT_LONG('n', &dims[TE_DIM], "n", "number of measurements"),
 		OPT_LONG('b', &Hbeats, "heart beats", "number of heart beats for MOLLI"),
-                OPTL_INT(0, "av-spokes", &averaged_spokes, "", "Number of averaged consecutive spokes"),
-		OPT_INT('m', &NE, "multi echos", "number of multi gradient echos"),
-		OPTL_INT(0, "freq-samples", &freq_samples, "", "Samples in frequency-/z-domain for FSE model based on generating function formalism"),
+                OPTL_PINT(0, "av-spokes", &averaged_spokes, "", "Number of averaged consecutive spokes"),
+		OPT_PINT('m', &NE, "multi echos", "number of multi gradient echos"),
+		OPTL_PINT(0, "freq-samples", &freq_samples, "", "Samples in frequency-/z-domain for FSE model based on generating function formalism"),
 		OPTL_SET(0, "pulsed", &pulsed, "Pulsed Arterial Spin Labeling"),
 		OPT_FLOAT('l', &lambda, "lambda", "Blood-brain partition coefficient"),
 		OPT_FLOAT('a', &delta_t, "Delta t", "Arterial transit time (ATT) in Buxton model"),
@@ -248,9 +247,8 @@ int main_signal(int argc, char* argv[argc])
 		default: assert(0);
 		}
 
-                complex float out[N];
-
-                get_signal(&parm, N, out, mxy);
+		complex float out[N];
+		get_signal(&parm, N, out, mxy);
 
 		md_copy_block(DIMS, pos, dims, signals, dims1, out, CFL_SIZE);
 
@@ -260,3 +258,4 @@ int main_signal(int argc, char* argv[argc])
 
 	return 0;
 }
+

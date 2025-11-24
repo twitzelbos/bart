@@ -9,6 +9,9 @@ tests/test-raga: raga extract vec transpose nrmse
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
+TESTS += tests/test-raga
+
+
 tests/test-raga-tiny: raga extract vec transpose nrmse
 	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)		;\
 	$(TOOLDIR)/raga -s 7 419 i.ra				;\
@@ -19,6 +22,9 @@ tests/test-raga-tiny: raga extract vec transpose nrmse
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
+TESTS += tests/test-raga-tiny
+
+
 tests/test-raga-inc: raga nrmse
 	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)		;\
 	$(TOOLDIR)/raga -r 55 419 i.ra				;\
@@ -26,6 +32,9 @@ tests/test-raga-inc: raga nrmse
 	$(TOOLDIR)/nrmse -t 0. i.ra i2.ra			;\
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
+
+TESTS += tests/test-raga-inc
+
 
 tests/test-raga-single: raga extract vec transpose nrmse
 	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)		;\
@@ -37,25 +46,37 @@ tests/test-raga-single: raga extract vec transpose nrmse
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
-TESTS += tests/test-raga tests/test-raga-tiny
-TESTS += tests/test-raga-inc tests/test-raga-single
+ TESTS += tests/test-raga-single
 
-# Depreciated Part!
-tests/test-raga-old: raga traj nrmse
-	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)				;\
-	$(TOOLDIR)/raga 377 i.ra						;\
-	$(TOOLDIR)/traj -y 377 -s 1 --double-base --raga-index-file i2.ra t.ra	;\
-	$(TOOLDIR)/nrmse -t 0.000001 i.ra i2.ra		;\
-	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
-	touch $@
 
-tests/test-raga-old-tiny-single: raga traj nrmse
+tests/test-raga-multislice: raga vec transpose bin circshift join nrmse
 	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)			;\
-	$(TOOLDIR)/raga --no-double-base -s 7 838 i.ra			;\
-	$(TOOLDIR)/traj -y 838 -s 7 --raga-index-file i2.ra t.ra	;\
-	$(TOOLDIR)/nrmse -t 0.000001 i.ra i2.ra				;\
+	$(TOOLDIR)/raga -s 1 -m 3 13 ind_ms.ra				;\
+	$(TOOLDIR)/raga -s 1      13 ind_ss.ra				;\
+	$(TOOLDIR)/vec 0 3 6 9 12 2 5 8 11 1 4 7 10 ind1_t.ra		;\
+	$(TOOLDIR)/transpose 0 2 ind1_t.ra ind1.ra			;\
+	$(TOOLDIR)/bin -o ind1.ra ind_ss.ra ind_s1.ra			;\
+	$(TOOLDIR)/circshift 2 4 ind_s1.ra ind_s2.ra			;\
+	$(TOOLDIR)/circshift 2 4 ind_s2.ra ind_s3.ra			;\
+	$(TOOLDIR)/join 13 ind_s1.ra ind_s2.ra ind_s3.ra ind_ref.ra	;\
+	$(TOOLDIR)/nrmse -t 0. ind_ms.ra ind_ref.ra			;\
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
-TESTS += tests/test-raga-old tests/test-raga-old-tiny-single
+ TESTS += tests/test-raga-multislice
+
+
+
+tests/test-raga-multi-inversion: raga circshift join nrmse
+	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)			;\
+	$(TOOLDIR)/raga -s 1 -i 3 13 ind_mi.ra				;\
+	$(TOOLDIR)/raga -s 1      13 ind_i1.ra				;\
+	$(TOOLDIR)/circshift 2 12 ind_i1.ra ind_i2.ra			;\
+	$(TOOLDIR)/circshift 2 11 ind_i1.ra ind_i3.ra			;\
+	$(TOOLDIR)/join 15 ind_i1.ra ind_i2.ra ind_i3.ra ind_ref.ra	;\
+	$(TOOLDIR)/nrmse -t 0. ind_mi.ra ind_ref.ra			;\
+	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
+	touch $@
+
+ TESTS += tests/test-raga-multi-inversion
 

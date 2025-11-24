@@ -56,6 +56,9 @@ static void philox_4x32(const uint64_t state, const uint64_t ctr1, const uint64_
 #define MAX_WORKER 128
 static struct bart_rand_state global_rand_state[MAX_WORKER] = { [0 ... MAX_WORKER - 1] = { .num_rand_seed = 123, .state = 0x7012082D361B3B31, .ctr1 = 0, .ctr2 = 0 } };
 
+//init is required
+static bool rand_is_init = false;
+
 void rand_state_update(struct bart_rand_state* state, unsigned long long seed)
 {
 	static_assert(sizeof(unsigned long long) == sizeof(uint64_t), "unsigned long long is not 64 bits!\n");
@@ -80,21 +83,29 @@ void rand_state_update(struct bart_rand_state* state, unsigned long long seed)
 	state->ctr2 = 0;
 }
 
-struct bart_rand_state* rand_state_create(unsigned long long seed)
+static void warn_bart_rand_state(void)
 {
 	if (cfl_loop_desc_active()) {
 
 		static bool warned = false;
 
-#pragma		omp critical
 		if (!warned) {
 
-			warned = true;
+#pragma			omp critical
+			if (!warned) {
 
-			if (0 != (cfl_loop_rand_flags & cfl_loop_get_flags()))			
-				debug_printf(DP_WARN, "rand_state_create provides identical random numbers for each cfl loop iteration.\n");
+				warned = true;
+
+				if (0 != (~cfl_loop_rand_flags & cfl_loop_get_flags()))
+					debug_printf(DP_WARN, "rand_state_create provides identical random numbers for each cfl loop iteration for dims with bitmask %lu\n", ~cfl_loop_rand_flags & cfl_loop_get_flags());
+			}
 		}
 	}
+}
+
+struct bart_rand_state* rand_state_create(unsigned long long seed)
+{
+	warn_bart_rand_state();
 
 	struct bart_rand_state* state = xmalloc(sizeof *state);
 
@@ -104,7 +115,9 @@ struct bart_rand_state* rand_state_create(unsigned long long seed)
 }
 
 static struct bart_rand_state get_worker_state(void)
-{ 
+{
+	assert(rand_is_init);
+
 	struct bart_rand_state worker_state;
 
 #pragma omp critical(global_rand_state)
@@ -117,7 +130,7 @@ static struct bart_rand_state get_worker_state(void)
 }
 
 static struct bart_rand_state get_worker_state_cfl_loop(void)
-{ 
+{
 	struct bart_rand_state worker_state = get_worker_state();
 
 	if (cfl_loop_desc_active()) {
@@ -142,8 +155,12 @@ static struct bart_rand_state get_worker_state_cfl_loop(void)
 
 void num_rand_init(unsigned long long seed)
 {
+	rand_is_init = true;
+
 	if (use_obsolete_rng())
 		assert(seed <= UINT_MAX);
+
+	warn_bart_rand_state();
 
 #pragma omp critical(global_rand_state)
 	rand_state_update(&global_rand_state[cfl_loop_worker_id()], seed);
@@ -231,7 +248,7 @@ unsigned int rand_range_state(struct bart_rand_state* state, unsigned int range)
 	if (!use_obsolete_rng()) {
 
 		// Lemire's Method, see https://arxiv.org/abs/1805.10941
-		// Adapted for 32-bit integers, and written as do { ... } while();
+		// Adapted for 32-bit integers, and written as do { ... } while ();
 		// Generates random number in range [0,range)
 
 		uint32_t t = (-range) % range;
@@ -362,6 +379,15 @@ void gaussian_rand_vec(long N, float* dst)
 	//This does not need to be scaled as md_gaussian_rand has (complex) variance 2!
 }
 
+void uniform_rand_vec(long N, float* dst)
+{
+	complex float* tmp = md_alloc_sameplace(1, MD_DIMS(N), sizeof(complex float), dst);
+
+	md_uniform_rand(1, MD_DIMS(N), tmp);
+	md_copy2(1, MD_DIMS(N), MD_DIMS(sizeof(float)), dst, MD_DIMS(sizeof(complex float)), tmp, sizeof(float));
+
+	md_free(tmp);
+}
 
 static void md_gaussian_obsolete_rand(int D, const long dims[D], complex float* dst)
 {

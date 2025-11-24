@@ -83,7 +83,6 @@ int main_nlinvnet(int argc, char* argv[argc])
 
 	struct nufft_conf_s nufft_conf = nufft_conf_defaults;
 
-	nufft_conf.cache_psf_grdding = true;
 	nufft_conf.lowmem = true;
 	nufft_conf.precomp_fftmod = false;
 	nufft_conf.precomp_roll = false;
@@ -155,7 +154,7 @@ int main_nlinvnet(int argc, char* argv[argc])
 		
 		OPTL_SUBOPT('N', "network", "...", "select neural network", ARRAY_SIZE(network_opts), network_opts),
 		OPTL_INFILE(0,"filter", &filename_filter, "<filter>", "filter output of network block"),
-		OPTL_INT(0, "conv-time", &(nlinvnet.conv_time), "w", "convolve along dimension 10 with window size w"),
+		OPTL_PINT(0, "conv-time", &(nlinvnet.conv_time), "w", "convolve along dimension 10 with window size w"),
 		//OPTL_SELECT(0, "conv-time-causal", enum PADDING, &(nlinvnet.conv_padding), PAD_CAUSAL, "(Use causal convolution)"),
 		OPTL_SET(0, "ref-img", &(nlinvnet.ref_init_img), "(Feed image after initialization in every network.)"),
 		OPTL_SET(0, "ref-col-rt", &(nlinvnet.ref_init_col_rt), "(Temporal regularization for coil sensitivities.)"),
@@ -176,7 +175,7 @@ int main_nlinvnet(int argc, char* argv[argc])
 		OPTL_ULONG(0, "scaling-flags", &scl_flags, "flags", "scaling is increased with sqrt(selected dims)"),
 
 		OPTL_SET('g', "gpu", &bart_use_gpu, "run on gpu"),
-		OPTL_INT('b', "batch-size", &(Nb), "", "size of mini batches"),
+		OPTL_PINT('b', "batch-size", &(Nb), "", "size of mini batches"),
 
 		OPTL_SUBOPT(0, "valid-data", "...", "(provide validation data)", ARRAY_SIZE(valid_opts),valid_opts),
 
@@ -507,12 +506,8 @@ int main_nlinvnet(int argc, char* argv[argc])
 
 	unmap_cfl(DIMS, pat_dims, pattern);
 	unmap_cfl(DIMS, ksp_dims, kspace);
-
-	if (NULL != basis)
-		unmap_cfl(DIMS, bas_dims, basis);
-
-	if (NULL != nlinvnet.filter)
-		unmap_cfl(DIMS, fil_dims, nlinvnet.filter);
+	unmap_cfl(DIMS, bas_dims, basis);
+	unmap_cfl(DIMS, fil_dims, nlinvnet.filter);
 
 	double recosecs = timestamp() - start_time;
 
@@ -520,5 +515,4 @@ int main_nlinvnet(int argc, char* argv[argc])
 
 	return 0;
 }
-
 

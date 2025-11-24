@@ -3,6 +3,7 @@
  * a BSD-style license which can be found in the LICENSE file.
  */
 
+#include <cstdint>
 #include <stdbool.h>
 #include <assert.h>
 
@@ -247,4 +248,119 @@ void cuda_copy_ND(int D, const long dims[], const long ostrs[], void* dst, const
 		break;
 	}
 }
+
+
+static __device__ void mmemcpy(void* dst, const void* src, size_t size)
+{
+	switch (size) {
+
+		case 1:
+			*((uint8_t*)dst) = *((uint8_t*)src);
+			break;
+
+		case 2:
+			*((uint16_t*)dst) = *((uint16_t*)src);
+			break;
+
+		case 4:
+			*((uint32_t*)dst) = *((uint32_t*)src);
+			break;
+
+		case 8:
+			*((uint64_t*)dst) = *((uint64_t*)src);
+			break;
+
+		default:
+			memcpy(dst, src, size);
+	}
+}
+
+
+#define BLOCKSIZE 1024
+
+static int blocksize(long N)
+{
+	return BLOCKSIZE;
+}
+
+static long gridsize(long N)
+{
+	// to ensure that "start" does not overflow we need to restrict gridsize!
+	return MIN((N + BLOCKSIZE - 1) / BLOCKSIZE, 65536 - 1);
+}
+
+
+__global__ static void decompress_kern(long istride, long N, long dcstrs, void* dst, long istrs, const long* index, const void* src, size_t size)
+{
+	int start = threadIdx.x + blockDim.x * blockIdx.x;
+	int stride = blockDim.x * gridDim.x;
+
+	for (long i = start; i < N; i += stride)
+		if (index[istrs * i] >= 0)
+			mmemcpy((uint8_t*)dst + dcstrs * i, (uint8_t*)src + index[istrs * i] * istride, size);
+}
+
+extern "C" void cuda_decompress(long stride, long N, long dcstrs, void* dst, long istrs, const long* index, const void* src, size_t size)
+{
+	decompress_kern<<<gridsize(N), blocksize(N), 0, cuda_get_stream()>>>(stride, N, dcstrs, dst, istrs, index, src, size);
+	CUDA_KERNEL_ERROR;
+}
+
+__global__ static void compress_kern(long istride, long N, void* dst, long istrs, const long* index, long dcstrs, const void* src, size_t size)
+{
+	int start = threadIdx.x + blockDim.x * blockIdx.x;
+	int stride = blockDim.x * gridDim.x;
+
+	for (long i = start; i < N; i += stride)
+		if (index[istrs * i] >= 0)
+			mmemcpy((uint8_t*)dst + index[istrs * i] * istride, (uint8_t*)src + dcstrs * i, size);
+}
+
+extern "C" void cuda_compress(long stride, long N, void* dst, long istrs, const long* index, long dcstrs, const void* src, size_t size)
+{
+	compress_kern<<<gridsize(N), blocksize(N), 0, cuda_get_stream()>>>(stride, N, dst, istrs, index, dcstrs, src, size);
+	CUDA_KERNEL_ERROR;
+}
+
+template <typename T>
+__global__ void kern_memequal(long N, bool* dst, const T* src1, const T* src2)
+{
+	int start = threadIdx.x + blockDim.x * blockIdx.x;
+	int stride = blockDim.x * gridDim.x;
+
+	for (long i = start; i < N; i += stride) {
+
+		if (src1[i] != src2[i])
+			dst[0] = false;
+	}
+}
+
+bool is_aligned(const void* ptr, size_t alignment)
+{
+    return 0 == ((uintptr_t)ptr % alignment);
+}
+
+extern "C" bool cuda_memequal(long size, const void* src1, const void* src2)
+{
+	bool ret_cpu = true;
+	bool* ret_gpu = (bool*)cuda_malloc(sizeof(bool));
+	cuda_memcpy((long)sizeof(bool), ret_gpu, &ret_cpu);
+
+	if ((0 == size % 8) && is_aligned(src1, 8) && is_aligned(src2, 8))
+		kern_memequal<uint64_t><<<gridsize(size / 8), blocksize(size / 8), 0, cuda_get_stream()>>>(size / 8, ret_gpu, (const uint64_t*)src1, (const uint64_t*)src2);
+	else if ((0 == size % 4) && is_aligned(src1, 4) && is_aligned(src2, 4))
+		kern_memequal<uint32_t><<<gridsize(size / 4), blocksize(size / 4), 0, cuda_get_stream()>>>(size / 4, ret_gpu, (const uint32_t*)src1, (const uint32_t*)src2);
+	else if ((0 == size % 2) && is_aligned(src1, 2) && is_aligned(src2, 2))
+		kern_memequal<uint16_t><<<gridsize(size / 2), blocksize(size / 2), 0, cuda_get_stream()>>>(size / 2, ret_gpu, (const uint16_t*)src1, (const uint16_t*)src2);
+	else
+		kern_memequal<uint8_t><<<gridsize(size / 1), blocksize(size / 1), 0, cuda_get_stream()>>>(size / 1, ret_gpu, (const uint8_t*)src1, (const uint8_t*)src2);
+
+	CUDA_KERNEL_ERROR;
+
+	cuda_memcpy((long)sizeof(bool), &ret_cpu, ret_gpu);
+	cuda_free(ret_gpu);
+	return ret_cpu;
+}
+
+
 

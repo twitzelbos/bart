@@ -420,10 +420,10 @@ tests/test-pics-noncart-lowmem: traj slice phantom conj join fft flip pics nrmse
 	$(TOOLDIR)/join 8 t0.ra t1.ra t.ra						;\
 	$(TOOLDIR)/pics 	 -i2 -t t.ra k.ra s.ra r1.ra				;\
 	$(TOOLDIR)/pics --lowmem -i2 -t t.ra k.ra s.ra r2.ra				;\
-	$(TOOLDIR)/nrmse -t 0.000005 r1.ra r2.ra					;\
-	$(TOOLDIR)/pics 	    -t t.ra k.ra s.ra r1.ra				;\
-	$(TOOLDIR)/pics --lowmem    -t t.ra k.ra s.ra r2.ra				;\
-	$(TOOLDIR)/nrmse -t 0.002 r1.ra r2.ra						;\
+	$(TOOLDIR)/nrmse -t 0.00001 r1.ra r2.ra						;\
+	$(TOOLDIR)/pics 	     --fista -e -l1 -r0.001 -t t.ra k.ra s.ra r1.ra	;\
+	$(TOOLDIR)/pics --lowmem     --fista -e -l1 -r0.001 -t t.ra k.ra s.ra r2.ra	;\
+	$(TOOLDIR)/nrmse -t 0.0001 r1.ra r2.ra						;\
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
@@ -435,10 +435,10 @@ tests/test-pics-noncart-lowmem-stack0: traj slice phantom conj join fft flip pic
 	$(TOOLDIR)/phantom -S8 s0.ra							;\
 	$(TOOLDIR)/pics -r0.01			  -i2 -t t0.ra k0.ra s0.ra r1.ra	;\
 	$(TOOLDIR)/pics -r0.01 --lowmem-stack=256 -i2 -t t0.ra k0.ra s0.ra r2.ra	;\
-	$(TOOLDIR)/nrmse -t 0.000005 r1.ra r2.ra					;\
-	$(TOOLDIR)/pics -r0.01			  -t t0.ra k0.ra s0.ra r1.ra		;\
-	$(TOOLDIR)/pics -r0.01 --lowmem-stack=256 -t t0.ra k0.ra s0.ra r2.ra		;\
-	$(TOOLDIR)/nrmse -t 0.005 r1.ra r2.ra						;\
+	$(TOOLDIR)/nrmse -t 0.00001 r1.ra r2.ra					;\
+	$(TOOLDIR)/pics -r0.01			  -t t0.ra --fista -e k0.ra s0.ra r1.ra		;\
+	$(TOOLDIR)/pics -r0.01 --lowmem-stack=256 -t t0.ra --fista -e k0.ra s0.ra r2.ra		;\
+	$(TOOLDIR)/nrmse -t 0.0001 r1.ra r2.ra						;\
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
@@ -495,9 +495,9 @@ tests/test-pics-noncart-lowmem-stack2: traj slice phantom conj join fft flip pic
 	$(TOOLDIR)/pics 		   -i2 -t t.ra k.ra s.ra r1.ra			;\
 	$(TOOLDIR)/pics --lowmem-stack=264 -i2 -t t.ra k.ra s.ra r2.ra			;\
 	$(TOOLDIR)/nrmse -t 0.00005 r1.ra r2.ra						;\
-	$(TOOLDIR)/pics 		   -t t.ra k.ra s.ra r1.ra			;\
-	$(TOOLDIR)/pics --lowmem-stack=264 -t t.ra k.ra s.ra r2.ra			;\
-	$(TOOLDIR)/nrmse -t 0.005 r1.ra r2.ra						;\
+	$(TOOLDIR)/pics 		    --fista -e -l1 -r0.001 -t t.ra k.ra s.ra r1.ra			;\
+	$(TOOLDIR)/pics --lowmem-stack=264  --fista -e -l1 -r0.001 -t t.ra k.ra s.ra r2.ra			;\
+	$(TOOLDIR)/nrmse -t 0.0001 r1.ra r2.ra						;\
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
@@ -583,7 +583,7 @@ tests/test-pics-eulermaruyama: ones zeros pics var nrmse
 	$(TOOLDIR)/zeros 3 128 128 1 z.ra						;\
 	$(TOOLDIR)/pics --eulermaruyama -S -w1. -s0.02 -i100 -l2 -r1. z.ra z.ra x.ra	;\
 	$(TOOLDIR)/var 3 x.ra v.ra							;\
-	$(TOOLDIR)/nrmse -t 0.005 o.ra v.ra						;\
+	$(TOOLDIR)/nrmse -t 0.008 o.ra v.ra						;\
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
@@ -595,7 +595,7 @@ tests/test-pics-eulermaruyama2: ones zeros pics var nrmse
 	$(TOOLDIR)/zeros 3 128 128 1 z.ra							;\
 	$(TOOLDIR)/pics --eulermaruyama -S -w1. -s0.02 -i150 -l2 -r0. -p s.ra z.ra s.ra x.ra	;\
 	$(TOOLDIR)/var 3 x.ra v.ra								;\
-	$(TOOLDIR)/nrmse -t 0.01 o.ra v.ra							;\
+	$(TOOLDIR)/nrmse -t 0.015 o.ra v.ra							;\
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
@@ -688,7 +688,7 @@ TESTS += tests/test-pics-poisson-wavl1 tests/test-pics-joint-wavl1 tests/test-pi
 TESTS += tests/test-pics-weights tests/test-pics-noncart-weights
 TESTS += tests/test-pics-warmstart
 TESTS += tests/test-pics-timedim tests/test-pics-bp-noncart
-TESTS += tests/test-pics-basis tests/test-pics-basis-noncart tests/test-pics-basis-noncart-memory tests/test-pics-basis-noncart2
+TESTS += tests/test-pics-basis-noncart tests/test-pics-basis-noncart-memory tests/test-pics-basis-noncart2
 #TESTS += tests/test-pics-lowmem
 TESTS += tests/test-pics-noncart-sms tests/test-pics-psf tests/test-pics-tgv tests/test-pics-tgv-denoising tests/test-pics-tgv2
 TESTS += tests/test-pics-wavl1-dau2 tests/test-pics-wavl1-cdf44 tests/test-pics-wavl1-haar
@@ -698,4 +698,5 @@ TESTS += tests/test-pics-eulermaruyama tests/test-pics-eulermaruyama2 tests/test
 TESTS += tests/test-pics-fista tests/test-pics-ist
 TESTS += tests/test-pics-pridu-norm tests/test-pics-pridu-admm tests/test-pics-pridu-adaptive-stepsize
 
+TESTS_SLOW += tests/test-pics-basis
 

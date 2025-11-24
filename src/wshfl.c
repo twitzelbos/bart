@@ -144,7 +144,7 @@ struct kern_s {
 
 	linop_data_t super;
 
-	unsigned int N;
+	int N;
 
 	long* reorder_dims; // Dimension of the index table:    ( n,  3,  1,  1, 1,  1,  1,  1)
 	long* phi_dims;     // Dimension of the temporal basis: ( 1,  1,  1,  1, 1, tf, tk,  1)
@@ -470,8 +470,8 @@ struct multc_s {
 
 	linop_data_t super;
 
-	unsigned int nc;
-	unsigned int md;
+	int nc;
+	int md;
 	const complex float* maps;
 	const struct linop_s* sc_op; // Single channel operator.
 };
@@ -953,7 +953,7 @@ int main_wshfl(int argc, char* argv[argc])
 
 	const struct opt_s opts[] = {
 		{ 'R', NULL, true, OPT_SPECIAL, opt_reg, &ropts, "<T>:A:B:C", "Generalized regularization options. (-Rh for help)" },
-		OPT_INT(    'b', &blksize, "blkdim",    "Block size for locally low rank."),
+		OPT_PINT(   'b', &blksize, "blkdim",    "Block size for locally low rank."),
 		OPT_INT(    'i', &maxiter, "mxiter",    "Maximum number of iterations."),
 		OPT_INT(    'j', &cgiter,  "cgiter",    "Maximum number of CG iterations in ADMM."),
 		OPT_FLOAT(  's', &rho,     "admrho",    "ADMM Rho value."),
@@ -1258,9 +1258,7 @@ int main_wshfl(int argc, char* argv[argc])
 	unmap_cfl(DIMS, reorder_dims, reorder);
 	unmap_cfl(DIMS, table_dims, table);
 	unmap_cfl(DIMS, coeff_dims, recon);
-
-	if (x0 != NULL)
-		unmap_cfl(DIMS, coeff_dims, init);
+	unmap_cfl(DIMS, coeff_dims, init);
 
 	debug_printf(DP_INFO, "Done.\n");
 
@@ -1269,3 +1267,4 @@ int main_wshfl(int argc, char* argv[argc])
 
 	return 0;
 }
+

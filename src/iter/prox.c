@@ -124,6 +124,7 @@ static void prox_weighted_leastsquares_fun(const operator_data_t* prox_data, flo
 static void prox_weighted_leastsquares_del(const operator_data_t* _data)
 {
 	auto data = CAST_DOWN(prox_weighted_leastsquares_data, _data);
+
 	multiplace_free(data->y);
 	multiplace_free(data->W);
 
@@ -378,7 +379,7 @@ static void prox_thresh_del(const void* _data)
 	xfree((void*)_data);
 }
 
-const struct operator_p_s* prox_thresh_create(unsigned int N, const long dims[N], float lambda,
+const struct operator_p_s* prox_thresh_create(int N, const long dims[N], float lambda,
 		void (*thresh)(void* _data, float lambda, float* _dst, const float* _src),
 		void* data)
 {

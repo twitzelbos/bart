@@ -7,8 +7,8 @@
  * a BSD-style license which can be found in the LICENSE file.
  */
 
-#ifndef __MISC_H
-#define __MISC_H
+#ifndef _MISC_H
+#define _MISC_H
 
 #include <stdlib.h>
 #include <stddef.h>
@@ -60,6 +60,12 @@ extern void warn_nonnull_ptr(void*);
 #define _PTR_ALLOC(T, x)										\
 	T* x = xmalloc(sizeof(T))
 #endif
+
+#define _CONCAT(A, B) A ## B
+#define CONCAT(A, B) _CONCAT(A, B)
+//FIXME _STRINGIFY is defined in mpi_portable_platform.h
+#define STRINGIFY_HELPER(x) # x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
 
 
 #define PTR_ALLOC(T, x)		_PTR_ALLOC(__typeof__(T), x)
@@ -123,7 +129,8 @@ extern int bitcount(unsigned long flags);
 
 extern const char* command_line;
 extern char* stdin_command_line;
-extern void* save_command_line(int argc, char* argv[__VLA(argc)]);
+extern char* serialize_command_line(int argc, char* argv[__VLA(argc)]);
+extern void save_command_line(int argc, char* argv[__VLA(argc)]);
 
 extern _Bool safe_isnanf(float x);
 extern _Bool safe_isfinite(float x);
@@ -143,5 +150,5 @@ extern char* construct_filename(int D, const long loopdims[__VLA(D)], const long
 
 #include "misc/cppwrap.h"
 
-#endif // __MISC_H
+#endif // _MISC_H
 

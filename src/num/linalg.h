@@ -1,16 +1,6 @@
-/* Copyright 2013-2015. The Regents of the University of California.
- * Copyright 2016-2020. Uecker Lab. University Medical Center Göttingen.
- * Copyright 2023. Institute of Biomedical Imaging. TU Graz.
- * All rights reserved. Use of this source code is governed by
- * a BSD-style license which can be found in the LICENSE file.
- */ 
 
 #include <complex.h>
 #include <stdbool.h>
-
-#ifdef __cplusplus
-#error This file does not support C++
-#endif
 
 extern void mat_identity(int A, int B, complex float x[A][B]);
 extern void mat_zero(int A, int B, complex float x[A][B]);
@@ -42,6 +32,8 @@ extern void mat_eig_double(int A, double EV[A], const double in[A][A]);
 extern complex float mat_det(int N, const complex float mat[N][N]);
 extern void mat_vecmul(int A, int B, complex float out[A], const complex float mat[A][B], const complex float in[B]);
 extern void matf_vecmul(int A, int B, float out[A], const float mat[A][B], const float in[B]);
+extern void matf_solve(int N, float x[N], const float m[N][N], const float y[N]);
+
 extern void mat_kron(int A, int B, int C, int D,
 		complex float out[A * C][B * D], const complex float in1[A][B], const complex float in2[C][D]);
 extern void mat_vec(int A, int B, complex float out[A * B], const complex float in[A][B]);
@@ -49,10 +41,13 @@ extern void vec_mat(int A, int B, complex float out[A][B], const complex float i
 extern void vec_zero(int N, complex float x[N]);
 extern void vec_copy(int N, complex float x[N], const complex float y[N]);
 extern void vecf_copy(int N, float x[N], const float y[N]);
+extern float vecf_sdot(int N, const float a[N], const float b[N]);
+extern float vecf_norm(int N, const float x[N]);
 
 // extern complex double vec_dot(int N, const complex float x[N], const complex float y[N]);
 extern complex float vec_dot(int N, const complex float x[N], const complex float y[N]);
 extern void vec_saxpy(int N, complex float x[N], complex float alpha, const complex float y[N]);
+extern void vecf_saxpy(int N, float x[N], float alpha, const float y[N]);
 extern void gram_matrix(int N, complex float cov[N][N], int L, const complex float data[N][L]);
 extern void gram_schmidt(int M, int N, float val[M], complex float vecs[M][N]);
 extern void gram_matrix2(int N, complex float cov[N * (N + 1) / 2], int L, const complex float data[N][L]);
@@ -77,3 +72,4 @@ extern void vec_sadd(long D, complex float alpha, complex float dst[D], const co
 extern void thomas_algorithm(int N, complex float f[N], const complex float A[N][3], const complex float d[N]);
 
 extern void mat_band_reorder(int A, int B, double mat[A][A], double band[B][A], bool upper);
+

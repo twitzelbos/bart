@@ -1,15 +1,10 @@
-/* Copyright 2013-2017. The Regents of the University of California.
- * Copyright 2016-2017. Martin Uecker.
- * All rights reserved. Use of this source code is governed by
- * a BSD-style license which can be found in the LICENSE file.
- */
 
-#ifndef __ITALGOS_H
-#define __ITALGOS_H
+#ifndef _ITER_ITALGOS_H
+#define _ITER_ITALGOS_H
 
 #include "misc/cppwrap.h"
 
-enum IN_TYPE { IN_UNDEFINED, IN_STATIC, IN_BATCH, IN_OPTIMIZE, IN_BATCH_GENERATOR, IN_BATCHNORM };
+enum IN_TYPE { IN_UNDEFINED, IN_STATIC, IN_BATCH, IN_OPTIMIZE, IN_BATCH_GENERATOR, IN_BATCHNORM, IN_GAUSSIAN_RAND, IN_UNIFORM_RAND };
 enum OUT_TYPE { OUT_UNDEFINED, OUT_STATIC, OUT_OPTIMIZE, OUT_BATCHNORM };
 
 #ifndef NUM_INTERNAL
@@ -98,7 +93,7 @@ float conjgrad(int maxiter, float l2lambda, float epsilon,
 	float* x, const float* b,
 	struct iter_monitor_s* monitor);
 
-void conjgrad_batch(int maxiter, float l2lambda, float epsilon,
+void conjgrad_batch(int maxiter, float l2lambda, float* l2lambda_batch, float epsilon,
 	long N, long Bi, long Bo,
 	const struct vec_iter_s* vops,
 	struct iter_op_s linop,
@@ -170,7 +165,7 @@ struct ist_data {
 typedef void CLOSURE_TYPE(ist_continuation_t)(struct ist_data* itrdata);
 
 
-void ist(int maxiter, float epsilon, float tau,
+void ist(int maxiter, float epsilon, float tau, _Bool last,
 	long N,
 	const struct vec_iter_s* vops,
 	ist_continuation_t ist_continuation,
@@ -218,6 +213,16 @@ void irgnm2(int iter, float alpha, float alpha_min, float alpha0, float redu,
 	struct iter_op_s der,
 	struct iter_op_p_s lsqr,
 	float* x, const float* xref, const float* y,
+	struct iter_op_s callback,
+	struct iter_monitor_s* monitor);
+
+void levenberg_marquardt(int maxiter, int cgiter, float l2lambda, float redu,
+	long N, long M, long Bi, long Bo,
+	const struct vec_iter_s* vops,
+	struct iter_op_s op,
+	struct iter_op_s adj,
+	struct iter_op_s nrm,
+	float* x, const float* y,
 	struct iter_op_s callback,
 	struct iter_monitor_s* monitor);
 
@@ -272,4 +277,4 @@ void lbfgs(int maxiter, int M, float step, float ftol, float gtol, float c1, flo
 
 #include "misc/cppwrap.h"
 
-#endif // __ITALGOS_H
+#endif // _ITER_ITALGOS_H

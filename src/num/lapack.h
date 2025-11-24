@@ -1,23 +1,19 @@
-/* Copyright 2013-2017. The Regents of the University of California.
- * All rights reserved. Use of this source code is governed by
- * a BSD-style license which can be found in the LICENSE file.
- */
 
 #include <complex.h>
 #include <stdbool.h>
-
-#ifdef __cplusplus
-#error This file does not support C++
-#endif
 
 extern void lapack_eig(long N, float eigenval[N], complex float matrix[N][N]);
 extern void lapack_geig(long N, float eigenval[N], complex float A[N][N], complex float B[N][N]);
 extern void lapack_svd(long M, long N, complex float U[M][M], complex float VH[N][N], float S[(N > M) ? M : N], complex float A[N][M]);
 extern void lapack_svd_econ(long M, long N,
-		     complex float U[M][(N > M) ? M : N],
-		     complex float VH[(N > M) ? M : N][N],
+		     complex float U[(N > M) ? M : N][M],
+		     complex float VH[N][(N > M) ? M : N],
 		     float S[(N > M) ? M : N],
 		     complex float A[N][M]);
+
+extern void lapack_qr_econ(long M, long N,
+		    complex float R[N][(N > M) ? M : N],
+		    complex float A[N][M]);
 
 extern void lapack_eig_double(long N, double eigenval[N], complex double matrix[N][N]);
 extern void lapack_svd_double(long M, long N, complex double U[M][M], complex double VH[N][N], double S[(N > M) ? M : N], complex double A[N][M]);
@@ -37,4 +33,7 @@ extern void lapack_sylvester(long N, long M, float* scale, complex float A[N][N]
 
 extern void lapack_cinverse_UL(long N, complex float A[N][N]);
 extern void lapack_sinverse_UL(long N, float A[N][N]);
+
+extern void lapack_solve_real(long N, float A[N][N], float B[N]);
+
 

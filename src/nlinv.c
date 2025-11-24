@@ -33,6 +33,7 @@
 #include "num/flpmath.h"
 #include "num/fft.h"
 #include "num/init.h"
+#include "num/rand.h"
 
 #include "noncart/nufft.h"
 #include "linops/linop.h"
@@ -79,7 +80,7 @@ int main_nlinv(int argc, char* argv[argc])
 
 	bool normalize = true;
 	bool combine = true;
-	unsigned int nmaps = 1;
+	int nmaps = 1;
 	float restrict_fov = -1.;
 
 	const char* psf_file = NULL;
@@ -101,7 +102,7 @@ int main_nlinv(int argc, char* argv[argc])
 	long my_sens_dims[3] = { 0, 0, 0 };
 	long my_ksens_dims[3] = { 0, 0, 0 };
 
-	unsigned int cnstcoil_flags = 0;
+	unsigned long cnstcoil_flags = 0;
 	bool pattern_for_each_coil = false;
 	float oversampling_coils = -1.;
 
@@ -118,7 +119,7 @@ int main_nlinv(int argc, char* argv[argc])
 		OPT_INT('d', &debug_level, "level", "Debug level"),
 		OPT_SET('c', &conf.rvc, "Real-value constraint"),
 		OPT_CLEAR('N', &normalize, "Do not normalize image with coil sensitivities"),
-		OPT_UINT('m', &nmaps, "nmaps", "Number of ENLIVE maps to use in reconstruction"),
+		OPT_PINT('m', &nmaps, "nmaps", "Number of ENLIVE maps to use in reconstruction"),
 		OPT_CLEAR('U', &combine, "Do not combine ENLIVE maps in output"),
 		OPT_FLOAT('f', &restrict_fov, "FOV", "restrict FOV"),
 		OPT_INFILE('p', &psf_file, "file", "pattern / transfer function"),
@@ -127,7 +128,7 @@ int main_nlinv(int argc, char* argv[argc])
 		OPT_INFILE('I', &init_file, "file", "File for initialization"),
 		OPT_SET('g', &bart_use_gpu, "use gpu"),
 		OPT_SET('S', &(conf.undo_scaling), "Re-scale image after reconstruction"),
-		OPT_UINT('s', &cnstcoil_flags, "", "(dimensions with constant sensitivities)"),
+		OPT_ULONG('s', &cnstcoil_flags, "", "(dimensions with constant sensitivities)"),
 		OPT_FLOAT('a', &conf.a, "", "(a in 1 + a * \\Laplace^-b/2)"),
 		OPT_FLOAT('b', &conf.b, "", "(b in 1 + a * \\Laplace^-b/2)"),
 		OPT_SET('P', &pattern_for_each_coil, "(supplied psf is different for each coil)"),
@@ -144,6 +145,7 @@ int main_nlinv(int argc, char* argv[argc])
 		OPTL_FLOAT(0, "cgtol", &conf.cgtol, "tol", "(tolerance for linearized problem)"),
 		OPTL_INT(0, "liniter", &conf.liniter, "iter", "(iterations for solving linearized problem)"),
 		OPTL_SET(0, "real-time", &(conf.realtime), "Use real-time (temporal l2) regularization"),
+		OPTL_INT(0, "phase-pole", &(conf.phasepoles), "d", "Use phase pole detection after d iterations (0 for every iteration)"),
 		OPTL_SET(0, "fast", &(conf.optimized), "Use tuned but less generic model"),
 		OPTL_SET(0, "legacy-early-stopping", &(conf.legacy_early_stoppping), "(legacy mode for irgnm early stopping)"),
 	};
@@ -151,6 +153,7 @@ int main_nlinv(int argc, char* argv[argc])
 	cmdline(&argc, argv, ARRAY_SIZE(args), args, help_str, ARRAY_SIZE(opts), opts);
 
 	num_init_gpu_support();
+	num_rand_init(0ULL);
 	conf.gpu = bart_use_gpu;
 
 
@@ -361,7 +364,7 @@ int main_nlinv(int argc, char* argv[argc])
 
 		assert(1 == ksp_dims[COEFF_DIM]);
 		assert(bas_dims[TE_DIM] == ksp_dims[TE_DIM]);
-		
+
 		if (conf.noncart)
 			assert(1 == md_calc_size(5, bas_dims));
 		else
@@ -376,7 +379,7 @@ int main_nlinv(int argc, char* argv[argc])
 	md_select_dims(DIMS, ~cnstcoil_flags, ksens_dims, dims);
 
 	for (int i = 0; i < 3; i++)
-		ksens_dims[i] = my_ksens_dims[i] ?: ksens_dims[i]; 
+		ksens_dims[i] = my_ksens_dims[i] ?: ksens_dims[i];
 
 	long sens_dims[DIMS];
 	md_select_dims(DIMS, ~cnstcoil_flags, sens_dims, dims);
@@ -405,7 +408,7 @@ int main_nlinv(int argc, char* argv[argc])
 		img = create_async_cfl(img_file, TIME_FLAG, DIMS, img_dims);
 	else
 		img = ((!pprocess) ? create_cfl : anon_cfl)(img_file, DIMS, img_dims);
-	
+
 	long msk_dims[DIMS];
 	md_select_dims(DIMS, FFT_FLAGS, msk_dims, img_dims);
 
@@ -413,7 +416,7 @@ int main_nlinv(int argc, char* argv[argc])
 
 	complex float* ksens = md_alloc(DIMS, sens_dims, CFL_SIZE);
 	complex float* sens = NULL;
-	
+
 	if (pprocess || sens_file)
 		sens = ((NULL != sens_file) ? create_cfl : anon_cfl)(sens_file, DIMS, sens_dims);
 
@@ -460,7 +463,6 @@ int main_nlinv(int argc, char* argv[argc])
 		nufft_conf.lowmem = nufft_lowmem;
 		nufft_conf.pcycle = false;
 		nufft_conf.periodic = false;
-		nufft_conf.cache_psf_grdding = true;
 		conf.nufft_conf = &nufft_conf;
 
 		noir2_recon_noncart(&conf, DIMS,
@@ -545,5 +547,4 @@ int main_nlinv(int argc, char* argv[argc])
 
 	return 0;
 }
-
 

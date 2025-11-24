@@ -5,8 +5,8 @@
  * a BSD-style license which can be found in the LICENSE file.
  */
 
-#ifndef __DEBUG_H
-#define __DEBUG_H 1
+#ifndef _DEBUG_H
+#define _DEBUG_H 1
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -44,11 +44,6 @@ extern void debug_vprintf_trace(const char* func_name,
 				int level, const char* fmt, va_list ap);
 
 
-#define BART_OUT(...) debug_printf_trace(__FUNCTION__, __FILE__, __LINE__, DP_INFO, __VA_ARGS__)
-#define BART_ERR(...) debug_printf_trace(__FUNCTION__, __FILE__, __LINE__, DP_ERROR, __VA_ARGS__)
-#define BART_WARN(...) debug_printf_trace(__FUNCTION__, __FILE__, __LINE__, DP_WARN, __VA_ARGS__)
-
-
 extern void debug_backtrace(size_t n);
 
 #ifdef USE_DWARF
@@ -74,4 +69,4 @@ extern void vendor_log(int level,
 #include "misc/cppwrap.h"
 
 
-#endif // __DEBUG_H
+#endif // _DEBUG_H

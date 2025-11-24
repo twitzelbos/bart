@@ -39,13 +39,18 @@ struct fft_cuda_plan_s {
 	long batch;
 	long idist;
 	long odist;
+
+	int D;
+	const long* dims;
+	const long* ostrs;
+	const long* istrs;
 };
 
 struct iovec {
 
-	long n; 
-	long is; 
-	long os; 
+	long n;
+	long is;
+	long os;
 };
 
 static const char* cufft_error_string[] = {
@@ -124,11 +129,16 @@ static struct fft_cuda_plan_s* fft_cuda_plan0(int D, const long dimensions[D], u
 	plan->cufft_initialized = false;
 	plan->workspace_size = 0;
 
+	plan->D = 0;
+	plan->dims = NULL;
+	plan->ostrs = NULL;
+	plan->istrs = NULL;
+
 	struct iovec dims[N];
 	struct iovec hmdims[N];
 
 	assert(0 != flags);
-	
+
 	// the cufft interface is strange, but we do our best...
 	int k = 0;
 	int l = 0;
@@ -141,7 +151,7 @@ static struct fft_cuda_plan_s* fft_cuda_plan0(int D, const long dimensions[D], u
 		if (MD_IS_SET(flags, i)) {
 
 			dims[k].n = dimensions[i];
-			dims[k].is = istrides[i] / CFL_SIZE; 
+			dims[k].is = istrides[i] / CFL_SIZE;
 			dims[k].os = ostrides[i] / CFL_SIZE;
 			k++;
 
@@ -186,7 +196,7 @@ static struct fft_cuda_plan_s* fft_cuda_plan0(int D, const long dimensions[D], u
 		cudims[k - 1 - i] = dims[i].n;
 		cuiemb[k - 1 - i] = dims[i].n;
 		cuoemb[k - 1 - i] = dims[i].n;
-	
+
 		lis = dims[i].n * dims[i].is;
 		los = dims[i].n * dims[i].os;
 	}
@@ -240,10 +250,9 @@ static struct fft_cuda_plan_s* fft_cuda_plan0(int D, const long dimensions[D], u
 	CUFFT_ERROR(cufftMakePlanMany(plan->cufft, k,
 				cudims, cuiemb, istride, idist,
 				cuoemb, ostride, odist, CUFFT_C2C, cubs, &(plan->workspace_size)));
-	CUFFT_ERROR(cufftSetStream(plan->cufft, cuda_get_stream()));
 
 	plan->cufft_initialized = true;
-	
+
 
 	return PTR_PASS(plan);
 
@@ -271,6 +280,33 @@ struct fft_cuda_plan_s* fft_cuda_plan(int D, const long dimensions[D], unsigned 
 
 	if (NULL != plan)
 		return plan;
+
+	if (flags != md_nontriv_dims(D, dimensions)) {
+
+		long dims[D];
+		long ostrs[D];
+		long istrs[D];
+
+		md_select_dims(D, flags, dims, dimensions);
+		md_select_strides(D, flags, ostrs, ostrides);
+		md_select_strides(D, flags, istrs, istrides);
+
+		struct fft_cuda_plan_s* plan = fft_cuda_plan(D, dims, flags, ostrs, istrs, backwards);
+
+		if (NULL == plan)
+			return NULL;
+
+		md_select_dims(D, ~flags, dims, dimensions);
+		md_select_strides(D, ~flags, ostrs, ostrides);
+		md_select_strides(D, ~flags, istrs, istrides);
+
+		plan->D = D;
+		plan->dims = ARR_CLONE(long[D], dims);
+		plan->ostrs = ARR_CLONE(long[D], ostrs);
+		plan->istrs = ARR_CLONE(long[D], istrs);
+
+		return plan;
+	}
 
 	unsigned long msb = find_msb(flags);
 
@@ -307,16 +343,23 @@ void fft_cuda_free_plan(struct fft_cuda_plan_s* cuplan)
 		cuplan->cufft_initialized = false;
 	}
 
+	if (0 != cuplan->D) {
+
+		xfree(cuplan->dims);
+		xfree(cuplan->ostrs);
+		xfree(cuplan->istrs);
+	}
+
 	xfree(cuplan);
 }
 
-void fft_cuda_exec(struct fft_cuda_plan_s* cuplan, complex float* dst, const complex float* src)
+static void fft_cuda_exec_int(struct fft_cuda_plan_s* cuplan, complex float* dst, const complex float* src)
 {
 	assert(cuda_ondevice(src));
 	assert(cuda_ondevice(dst));
 	assert(NULL != cuplan);
 
-	
+
 	assert(cuplan->cufft_initialized);
 	size_t workspace_size = cuplan->workspace_size;
 	cufftHandle cufft = cuplan->cufft;
@@ -324,18 +367,34 @@ void fft_cuda_exec(struct fft_cuda_plan_s* cuplan, complex float* dst, const com
 	void* workspace = md_alloc_gpu(1, MAKE_ARRAY(1l), workspace_size);
 
 	CUDA_ERROR_PTR(dst, src, workspace);
-	CUFFT_ERROR(cufftSetWorkArea(cufft, workspace));
 
-	for (int i = 0; i < cuplan->batch; i++)
-		CUFFT_ERROR(cufftExecC2C(cufft,
-					 (cufftComplex*)src + i * cuplan->idist,
-					 (cufftComplex*)dst + i * cuplan->odist,
-					 (!cuplan->backwards) ? CUFFT_FORWARD : CUFFT_INVERSE));
-	
+#pragma omp critical(bart_cufft_streams)
+	{
+		CUFFT_ERROR(cufftSetStream(cufft, cuda_get_stream()));
+		CUFFT_ERROR(cufftSetWorkArea(cufft, workspace));
+
+		for (int i = 0; i < cuplan->batch; i++)
+			CUFFT_ERROR(cufftExecC2C(cufft,
+						 (cufftComplex*)src + i * cuplan->idist,
+						 (cufftComplex*)dst + i * cuplan->odist,
+						 (!cuplan->backwards) ? CUFFT_FORWARD : CUFFT_INVERSE));
+	}
+
 	md_free(workspace);
 
 	if (NULL != cuplan->chain)
 		fft_cuda_exec(cuplan->chain, dst, dst);
+}
+
+void fft_cuda_exec(struct fft_cuda_plan_s* cuplan, complex float* dst, const complex float* src)
+{
+	long pos[cuplan->D?:1];
+	md_singleton_strides(cuplan->D, pos);
+
+	do {
+		fft_cuda_exec_int(cuplan, &MD_ACCESS(cuplan->D, cuplan->ostrs, pos, dst), &MD_ACCESS(cuplan->D, cuplan->istrs, pos, src));
+
+	} while (md_next(cuplan->D, cuplan->dims, ~0UL, pos));
 }
 
 #endif // USE_CUDA

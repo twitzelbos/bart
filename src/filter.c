@@ -21,9 +21,6 @@
 #include "misc/mmio.h"
 #include "misc/misc.h"
 #include "misc/opts.h"
-#include "misc/debug.h"
-
-
 
 #ifndef DIMS
 #define DIMS 16
@@ -54,19 +51,23 @@ int main_filter(int argc, char* argv[argc])
 	int mavg = -1;
 	bool geom = false;
 
+	int csum = -1;
+
 	int diff = -1;
 	int back = -1;
 	bool zeroing = false;
 
 	const struct opt_s opts[] = {
 
-		OPT_INT('m', &med, "dim", "median filter along dimension dim"),
-		OPT_INT('l', &len, "len", "length of filter"),
+		OPT_PINT('m', &med, "dim", "median filter along dimension dim"),
+		OPT_PINT('l', &len, "len", "length of filter"),
 		OPT_SET('G', &geom, "geometric median"),
-		OPT_INT('a', &mavg, "dim", "Moving average filter along dimension dim"),
+		OPT_PINT('a', &mavg, "dim", "Moving average filter along dimension dim"),
 
-		OPT_INT('d', &diff, "dim", "forward difference along dimension dim"),
-		OPT_INT('b', &back, "dim", "backward difference along dimension dim"),
+		OPT_PINT('C', &csum, "dim", "Cumulative sum along dimension dim"),
+
+		OPT_PINT('d', &diff, "dim", "forward difference along dimension dim"),
+		OPT_PINT('b', &back, "dim", "backward difference along dimension dim"),
 		OPT_SET('Z', &zeroing, "set first (forward diff) or last (backward) value to zero"),
 	};
 
@@ -76,7 +77,7 @@ int main_filter(int argc, char* argv[argc])
 
 	char filter_type = 0;
 
-	assert ((med != -1) ^ (mavg != -1) ^ (diff != -1) ^ (back != -1));
+	assert ((med != -1) ^ (mavg != -1) ^ (diff != -1) ^ (back != -1) ^ (csum != -1));
 
 	if (med >= 0) {
 
@@ -99,6 +100,12 @@ int main_filter(int argc, char* argv[argc])
 		len = 1;
 		dim = back;
 		filter_type = 'b';
+
+	} else if (csum >= 0) {
+
+		len = 1;
+		dim = csum;
+		filter_type = 'C';
 	}
 
 	long in_dims[DIMS];
@@ -133,22 +140,22 @@ int main_filter(int argc, char* argv[argc])
 	switch (filter_type) {
 
 	case 'm':
-
 		(geom ? md_geometric_medianz2 : md_medianz2)(DIMS + 1, DIMS, tmp_dims, tmp2_strs, out_data, tmp_strs, in_data);
 		break;
 
 	case 'a':
-
 		md_moving_avgz2(DIMS + 1, DIMS, tmp_dims, tmp2_strs, out_data, tmp_strs, in_data);
 		break;
 
-	case 'd':
+	case 'C':
+		md_zcumsum(DIMS, out_dims, MD_BIT(dim), out_data, in_data);
+		break;
 
+	case 'd':
 		(zeroing ? md_zfdiff0 : md_zfdiff)(DIMS, out_dims, dim, out_data, in_data);
 		break;
 		
 	case 'b':
-
 		(zeroing ? md_zfdiff_backwards0 : md_zfdiff_backwards)(DIMS, out_dims, dim, out_data, in_data);
 		break;
 

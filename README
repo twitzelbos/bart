@@ -135,23 +135,34 @@ To install the required libraries on Redhat / Centos / RockyLinux / AlmaLinux 9 
 
 Note that crb (CodeReady Builder) is the new name of powertools from RedHat 9, which contains additional development packages.
 
+To install the required libraries on Redhat / Centos / RockyLinux / AlmaLinux 10 run:
+
+    $ sudo dnf --enablerepo=crb install  fftw-devel openblas-devel libpng-devel lapack-devel gcc
+
+and the following command in the bart repository, to actually use Openblas:
+
+    $ echo -e -n "OPENBLAS=1\nCPPFLAGS=-Wall -Wextra -I/usr/include/openblas\n" > Makefiles/Makefile.local
+
 To install the required libraries on  Fedora 39/40 run:
 
     $ sudo dnf install gcc make fftw-devel lapack-devel openblas-devel atlas-devel libpng-devel
 
 ### 2.1.2. Mac OS X
 
-BART is supported on Intel-based and ARM-based Macs. Xcode is also required. For
-ARM-based Macs, it is recommended to use gcc12 or higher.
+BART is supported on Intel-based and ARM-based Macs. Xcode CommandLineTools is
+also required (install with: $ xcode-select --install). For ARM-based Macs, it
+is recommended to use gcc12 or higher.
 
 Using MacPorts (http://www.macports.org/):
 
     $ sudo port install fftw-3-single
-    $ sudo port install gcc12
+    $ sudo port install gcc14
     $ sudo port install libpng
     $ sudo port install openblas
     $ sudo port install flock
     $ sudo port install gmake
+    $ sudo port install coreutils
+    $ sudo port install libblocksruntime
 
     (optional)
     $ sudo port install octave
@@ -159,8 +170,12 @@ Using MacPorts (http://www.macports.org/):
     (optional)
     install version 0.5.2 of the ISMRMRD library
 
-    Use gmake when building and select gcc as the compiler:
-    $ CC=gcc-mp-12 gmake
+    Add the following directory to the front of your PATH environment variable:
+    /opt/local/libexec/gnubin/
+
+    Select gcc as the compiler and make:
+    $ CC=gcc-mp-14 make
+
 
 Using HomeBrew (https://brew.sh):
 

@@ -73,7 +73,7 @@ static bool test_nlop_cast_neg(void)
 	enum { N = 3 };
 	long dims[N] = { 10, 7, 3 };
 
-	struct nlop_s* d = nlop_zexp_create(N, dims);
+	const struct nlop_s* d = nlop_zexp_create(N, dims);
 
 	if (NULL != linop_from_nlop(d))
 		ok = false;
@@ -103,8 +103,8 @@ static bool test_nlop_chain(void)
 
 	struct linop_s* cdiag = linop_cdiag_create(N, dims, 0, &val);
 	struct nlop_s* diag = nlop_from_linop(cdiag);
-	struct nlop_s* zexp = nlop_zexp_create(N, dims);
-	struct nlop_s* zexp2 = nlop_chain(zexp, diag);
+	const struct nlop_s* zexp = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp2 = nlop_chain(zexp, diag);
 
 	double err = nlop_test_derivative(zexp2);
 
@@ -246,7 +246,7 @@ static bool test_nlop_zexp(void)
 
 	md_gaussian_rand(N, dims, src);
 
-	struct nlop_s* zexp = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp = nlop_zexp_create(N, dims);
 
 	md_zexp(N, dims, dst1, src);
 
@@ -341,7 +341,7 @@ static bool test_nlop_zexp_derivative(void)
 	enum { N = 3 };
 	long dims[N] = { 10, 7, 3 };
 
-	struct nlop_s* zexp = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp = nlop_zexp_create(N, dims);
 
 	double err = nlop_test_derivative(zexp);
 
@@ -362,7 +362,7 @@ static bool test_nlop_zexp_der_adj(void)
 	enum { N = 3 };
 	long dims[N] = { 10, 7, 3 };
 
-	struct nlop_s* zexp = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp = nlop_zexp_create(N, dims);
 
 	complex float* dst = md_alloc(N, dims, CFL_SIZE);
 	complex float* src = md_alloc(N, dims, CFL_SIZE);
@@ -393,7 +393,7 @@ static bool test_nlop_combine(void)
 	enum { N = 3 };
 	long dims[N] = { 10, 7, 3 };
 
-	struct nlop_s* zexp = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp = nlop_zexp_create(N, dims);
 	struct linop_s* lid = linop_identity_create(N, dims);
 	struct nlop_s* id = nlop_from_linop(lid);
 	linop_free(lid);
@@ -444,7 +444,7 @@ static bool test_nlop_combine_der1(void)
 	enum { N = 3 };
 	long dims[N] = { 10, 7, 3 };	// FIXME: this test is broken
 
-	struct nlop_s* zexp = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp = nlop_zexp_create(N, dims);
 	struct linop_s* lid = linop_identity_create(N, dims);
 	struct nlop_s* id = nlop_from_linop(lid);
 	linop_free(lid);
@@ -506,8 +506,8 @@ static bool test_nlop_comb_flat_der(void)
 	enum { N = 3 };
 	long dims[N] = { 10, 7, 3 };
 
-	struct nlop_s* zexp1 = nlop_zexp_create(N, dims);
-	struct nlop_s* zexp2 = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp1 = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp2 = nlop_zexp_create(N, dims);
 
 	random_application(zexp1);
 	random_application(zexp2);
@@ -553,8 +553,8 @@ static bool test_nlop_combine_derivative(void)
 	enum { N = 3 };
 	long dims[N] = { 10, 7, 3 };	// FIXME: this test is broken
 
-	struct nlop_s* zexp1 = nlop_zexp_create(N, dims);
-	struct nlop_s* zexp2 = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp1 = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp2 = nlop_zexp_create(N, dims);
 	struct nlop_s* comb = nlop_combine(zexp1, zexp2);
 	struct nlop_s* flat = nlop_flatten(comb);
 
@@ -586,10 +586,10 @@ static bool test_nlop_link(void)
 	struct nlop_s* diag = nlop_from_linop(cdiag);
 	linop_free(cdiag);
 
-	struct nlop_s* zexp = nlop_zexp_create(N, dims);
-	struct nlop_s* zexp2 = nlop_chain(zexp, diag);
-	struct nlop_s* zexp3 = nlop_combine(diag, zexp);
-	struct nlop_s* zexp4 = nlop_link(zexp3, 1, 0);
+	const struct nlop_s* zexp = nlop_zexp_create(N, dims);
+	const struct nlop_s* zexp2 = nlop_chain(zexp, diag);
+	const struct nlop_s* zexp3 = nlop_combine(diag, zexp);
+	const struct nlop_s* zexp4 = nlop_link(zexp3, 1, 0);
 
 	complex float* in = md_alloc(N, dims, CFL_SIZE);
 	complex float* dst1 = md_alloc(N, dims, CFL_SIZE);
@@ -1377,36 +1377,22 @@ static bool test_nlop_checkpointing(void)
 UT_REGISTER_TEST(test_nlop_checkpointing);
 
 
-static bool test_mriop_normalinv_config(bool batch_independent, bool share_pattern)
+static bool test_mriop_normalinv(void)
 {
 	// Here we test the basic case of a fully sampled k-space
 	// => The normal operator is the identity
 	// => out = in / (1+lambda)
 	enum { N = 16 };
-	long dims[N] = { 8, 8, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3 };
+	long dims[N] = { 8, 8, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+	long idims[N] = { 8, 8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 
-	struct config_nlop_mri_s mri_conf = conf_nlop_mri_simple;
+	struct config_nlop_mri_s* mri_conf = sense_model_config_cart_create(N, dims, idims, dims, idims);
 
-	if (!share_pattern)
-		mri_conf.pattern_flags = MD_CLEAR(mri_conf.pattern_flags, 15);
+	auto nlop_inv = nlop_mri_normal_inv_create(N, MD_SINGLETON_DIMS(N), 1, mri_conf, NULL); // in: x0, coil, pattern, lambda; out:
 
-	if (!batch_independent)
-		mri_conf.batch_flags = 0;
+	complex float* pattern = md_alloc(N, idims, CFL_SIZE);
 
-	long pdims[N];
-	long idims[N];
-	long ldims[N];
-
-	md_select_dims(N, mri_conf.pattern_flags, pdims, dims);
-	md_select_dims(N, mri_conf.image_flags, idims, dims);
-	md_select_dims(N, MD_BIT(15), ldims, dims);
-
-
-	auto nlop_inv = nlop_mri_normal_inv_create(N, dims, ldims, N, pdims, &mri_conf, NULL); // in: x0, coil, pattern, lambda; out:
-
-	complex float* pattern = md_alloc(N, pdims, CFL_SIZE);
-
-	md_zfill(N, pdims, pattern, 1.);
+	md_zfill(N, idims, pattern, 1.);
 
 
 	complex float* coils = md_alloc(N, dims, CFL_SIZE);
@@ -1416,15 +1402,15 @@ static bool test_mriop_normalinv_config(bool batch_independent, bool share_patte
 	normalize(N, MD_BIT(3), dims, coils);
 
 	nlop_inv = nlop_set_input_const_F(nlop_inv, 1, N, dims, true, coils);
-	nlop_inv = nlop_set_input_const_F(nlop_inv, 1, N, pdims, true, pattern);
+	nlop_inv = nlop_set_input_const_F(nlop_inv, 1, N, idims, true, pattern);
 
 	md_free(coils);
 	md_free(pattern);
 
 
-	complex float* lambda = md_alloc(N, ldims, CFL_SIZE);
+	complex float* lambda = md_alloc(N, MD_SINGLETON_DIMS(N), CFL_SIZE);
 
-	md_zfill(N, ldims, lambda, 3.);
+	md_zfill(N, MD_SINGLETON_DIMS(N), lambda, 3.);
 
 	complex float* in = md_alloc(N, idims, CFL_SIZE);
 	complex float* out = md_alloc(N, idims, CFL_SIZE);
@@ -1458,18 +1444,13 @@ static bool test_mriop_normalinv_config(bool batch_independent, bool share_patte
 	md_free(out);
 	md_free(lambda);
 
+	sense_model_config_free(mri_conf);
+
 	nlop_free(nlop_inv);
 
 	UT_RETURN_ASSERT(1.e-5 > err);
 }
 
-static bool test_mriop_normalinv(void)
-{
-	return    test_mriop_normalinv_config(true, true)
-	       && test_mriop_normalinv_config(true, false)
-	       && test_mriop_normalinv_config(false, true)
-	       && test_mriop_normalinv_config(false, false);
-}
 
 UT_REGISTER_TEST(test_mriop_normalinv);
 

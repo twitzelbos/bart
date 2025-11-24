@@ -29,8 +29,8 @@
  *
  * Chambolle A, Pock, T. A First-Order Primal-Dual Algorithm for Convex Problems
  * with Applications to Imaging. J. Math. Imaging Vis. 2011; 40, 120-145.
- * 
- * Bredies K, Holler M. A TGV-Based Framework for Variational Image Decompression, 
+ *
+ * Bredies K, Holler M. A TGV-Based Framework for Variational Image Decompression,
  * Zooming, and Reconstruction. Part II: Numerics. SIAM J. Imaging Sci. 2015; 8, 2851-2886.
  */
 
@@ -167,6 +167,7 @@ void landweber_sym(int maxiter, float epsilon, float alpha,
  * @param maxiter maximum number of iterations
  * @param epsilon stop criterion
  * @param tau (step size) weighting on the residual term, A^H (b - Ax)
+ * @param last final application of threshold function
  * @param N size of input, x
  * @param vops vector ops definition
  * @param op linear operator, e.g. A
@@ -175,7 +176,7 @@ void landweber_sym(int maxiter, float epsilon, float alpha,
  * @param b observations
  * @param monitor compute objective value, errors, etc.
  */
-void ist(int maxiter, float epsilon, float tau, long N,
+void ist(int maxiter, float epsilon, float tau, bool last, long N,
 		const struct vec_iter_s* vops,
 		ist_continuation_t ist_continuation,
 		struct iter_op_s op,
@@ -205,12 +206,13 @@ void ist(int maxiter, float epsilon, float tau, long N,
 		if (NULL != ist_continuation)
 			ist_continuation(&itrdata);
 
+		iter_op_p_call(thresh, itrdata.scale * itrdata.tau, x, x);
+
 		iter_op_call(op, r, x);		// r = A x
 		vops->xpay(N, -1., r, b);	// r = b - r = b - A x
 
 		itrdata.rsnew = vops->norm(N, r);
 
-		iter_op_p_call(thresh, itrdata.scale * itrdata.tau, x, x);
 
 		debug_printf(DP_DEBUG3, "#It %03d: %f \n", itrdata.iter, itrdata.rsnew / itrdata.rsnot);
 
@@ -218,6 +220,12 @@ void ist(int maxiter, float epsilon, float tau, long N,
 			break;
 
 		vops->axpy(N, x, itrdata.tau, r);
+	}
+
+	if (!last) {
+
+		iter_monitor(monitor, vops, x);
+		iter_op_p_call(thresh, itrdata.scale * itrdata.tau, x, x);
 	}
 
 	debug_printf(DP_DEBUG3, "\n");
@@ -502,7 +510,7 @@ cleanup:
  * @param x initial estimate
  * @param b observations
  */
-void conjgrad_batch(int maxiter, float l2lambda, float epsilon,
+void conjgrad_batch(int maxiter, float l2lambda, float* l2lambda_bat, float epsilon,
 	long N, long Bi, long Bo,
 	const struct vec_iter_s* vops,
 	struct iter_op_s linop,
@@ -552,7 +560,10 @@ void conjgrad_batch(int maxiter, float l2lambda, float epsilon,
 		debug_printf(DP_DEBUG3, "#%d: %f\n", i, (double)sqrtf(vops->norm(Bo * Bi, rsnew) / (float)(Bo * Bi)));
 
 		iter_op_call(linop, Ap, p);	// Ap = A p
-		vops->axpy(Bo * Bi * N, Ap, l2lambda, p);
+		vops->axpy(2 * Bo * Bi * N, Ap, l2lambda, p);
+
+		if (NULL != l2lambda_bat)
+			vops->axpy_bat(Bi, N, Bo, Ap, l2lambda_bat, p);
 
 		vops->dot_bat(Bi, N, Bo, pAp, p, Ap);
 
@@ -716,6 +727,87 @@ void irgnm2(int iter, float alpha, float alpha_min, float alpha_min0, float redu
 }
 
 
+/**
+ * (Batched) Levenberg-Marquardt
+ *
+ */
+void levenberg_marquardt(int maxiter, int cgiter, float l2lambda, float redu,
+	long N, long M, long Bi, long Bo,
+	const struct vec_iter_s* vops,
+	struct iter_op_s op,
+	struct iter_op_s adj,
+	struct iter_op_s nrm,
+	float* x, const float* y,
+	struct iter_op_s callback,
+	struct iter_monitor_s* monitor)
+{
+	long NT = 2 * N * Bi * Bo;
+	long MT = 2 * M * Bi * Bo;
+
+	float* r = vops->allocate(MT);
+	float* b = vops->allocate(NT);
+	float* d = vops->allocate(NT);
+	float* xt = vops->allocate(NT);
+
+	float* rold = vops->allocate(Bo * Bi);
+	float* rnew = vops->allocate(Bo * Bi);
+	float* valid = vops->allocate(Bo * Bi);
+	float* l2arr = vops->allocate(Bo * Bi);
+
+	vops->clear(Bo * Bi, l2arr);
+	vops->sadd(Bo * Bi, l2arr, l2lambda);
+
+	for (int i = 0; i < maxiter; i++) {
+
+		iter_monitor(monitor, vops, x);
+
+		iter_op_call(op, r, x);			// r = F x
+
+		vops->xpay(MT, -1., r, y);	// r = y - F x
+
+		vops->dot_bat(Bi, M, Bo, rold, r, r);
+
+		debug_printf(DP_DEBUG1, "Step: %d, Res: %f\n", i, vops->norm(MT, r));
+
+		iter_op_call(adj, b, r);
+
+		vops->clear(NT, d);
+
+		conjgrad_batch(cgiter, 0, l2arr, 0, N, Bi, Bo, vops, nrm, d, b, NULL);
+
+		vops->add(NT, xt, x, d);
+
+		if (NULL != callback.fun)
+			iter_op_call(callback, xt, xt);
+
+		iter_op_call(op, r, xt);		// r = F x
+		vops->xpay(MT, -1., r, y);		// r = y - F x
+		vops->dot_bat(Bi, M, Bo, rnew, r, r);
+
+		vops->le(Bo * Bi, valid, rnew, rold);
+
+		//only update if rnew <= rold
+		vops->sub(NT, d, xt, x);
+		vops->axpy_bat(Bi, N, Bo, x, valid, d);
+
+		//l2arr *= redu if rnew <= rold, /=redu else
+		vops->smul(Bo * Bi, (redu - 1./redu), valid, valid);
+		vops->sadd(Bo * Bi, valid, 1. / redu);
+		vops->mul(Bo * Bi, l2arr, l2arr, valid);
+	}
+
+	vops->del(d);
+	vops->del(b);
+	vops->del(r);
+	vops->del(xt);
+
+	vops->del(rold);
+	vops->del(rnew);
+	vops->del(valid);
+	vops->del(l2arr);
+}
+
+
 
 /**
  * Alternating Minimization
@@ -838,7 +930,7 @@ double power(int maxiter,
  * @param x initial estimate
  * @param monitor callback function
  */
-void chambolle_pock(float alpha, int maxiter, float epsilon, float tau, float sigma, 
+void chambolle_pock(float alpha, int maxiter, float epsilon, float tau, float sigma,
 	float sigma_tau_ratio, float theta, float decay, bool adapt_stepsize,
 	int O, long N, long M[O],
 	const struct vec_iter_s* vops,
@@ -961,11 +1053,11 @@ void chambolle_pock(float alpha, int maxiter, float epsilon, float tau, float si
 		* norm_x = || x_new ||_2
 		*/
 		if (adapt_stepsize) {
-			
+
 			vops->sub(N, x_new, x, x_old);
 
 			float norm_Kx = 0;
-			
+
 			// || A( x - x_old ) ||_2
 
 			for (int j = 0; j < O; j++) {
@@ -997,7 +1089,7 @@ void chambolle_pock(float alpha, int maxiter, float epsilon, float tau, float si
 			if (0 != norm_Kx) {
 
 				float ratio = norm_x / norm_Kx;
-				
+
 				float sigma_tau_sqrt = sqrtf(sigma * tau);
 
 				float threshold = 0.95f * sigma_tau_sqrt;
@@ -1016,14 +1108,14 @@ void chambolle_pock(float alpha, int maxiter, float epsilon, float tau, float si
 
 					temp = sigma_tau_sqrt;
 				}
-				
+
 				sigma = temp * sigma_tau_ratio;
 				tau = temp / sigma_tau_ratio;
 
 				debug_printf(DP_DEBUG3, "#Step sizes %03d: sigma: %f, tau: %f  \n", i, sigma, tau);
 
 			} else {
-				
+
 				debug_printf(DP_DEBUG3, "#Step sizes unchanged.\n");
 			}
 		}
@@ -1230,6 +1322,12 @@ void sgd(	int epochs, int batches,
 			N_batch_gen += 1;
 			break;
 
+		case IN_GAUSSIAN_RAND:
+		case IN_UNIFORM_RAND:
+
+			x[i] = vops->allocate(isize[i]);
+			break;
+
 		default:
 
 			error("unknown flag\n");
@@ -1256,6 +1354,16 @@ void sgd(	int epochs, int batches,
 		iter_dump(dump, epoch, NI, x2);
 
 		for (int i_batch = 0; i_batch < N_total / N_batch; i_batch++) {
+
+			for (int i = 0; i < NI; i++) {
+
+				if (IN_GAUSSIAN_RAND == in_type[i])
+					vops->rand(isize[i], x[i]);
+
+				if (IN_UNIFORM_RAND == in_type[i])
+					vops->uniform(isize[i], x[i]);
+			}
+
 
 			if (0 != N_batch_gen)
 				iter_nlop_call(nlop_batch_gen, N_batch_gen, x_batch_gen);
@@ -1319,7 +1427,9 @@ void sgd(	int epochs, int batches,
 		if (NULL != dxs[i])
 			vops->del(dxs[i]);
 
-		if (IN_BATCH_GENERATOR == in_type[i]) {
+		if (   (IN_BATCH_GENERATOR == in_type[i])
+		    || (IN_GAUSSIAN_RAND == in_type[i])
+		    || (IN_UNIFORM_RAND == in_type[i])) {
 
 			vops->del(x[i]);
 			x[i] = NULL;
@@ -1406,7 +1516,7 @@ void iPALM(	long NI, long isize[NI], enum IN_TYPE in_type[NI], float* x[const NI
 		tmp[i] = NULL;
 		grad[i] = NULL;
 
-		switch (in_type[i]){
+		switch (in_type[i]) {
 
 		case IN_STATIC:
 			break;

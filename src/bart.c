@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <math.h>
 
 #ifdef _WIN32
 #include "win/fmemopen.h"
@@ -33,6 +34,7 @@
 #include "num/mpi_ops.h"
 #include "num/multind.h"
 #include "num/rand.h"
+#include "num/fft_plan.h"
 
 #ifdef USE_MPI
 #include <mpi.h>
@@ -71,11 +73,18 @@ static void bart_exit_cleanup(void)
 	if (NULL != command_line)
 		XFREE(command_line);
 
+	if (NULL != stdin_command_line)
+		XFREE(stdin_command_line);
+
+	toolgraph_close();
+
 	io_memory_cleanup();
 
 	opt_free_strdup();
 
 	stream_unmap_all();
+
+	fft_cache_free();
 
 #ifdef FFTWTHREADS
 	MANGLE(fftwf_cleanup_threads)();
@@ -199,12 +208,15 @@ static void parse_bart_opts(int* argcp, char*** argvp, int order[DIMS], stream_t
 		OPTL_SET(0, "version", &version, "print version"),
 		OPTL_ULONG(0, "random-dims", &cfl_loop_rand_flags, "flags", "vary random numbers along selected dimensions (default: all)"),
 		OPT_SET('d', &attach, "(Wait for debugger)"),
+		OPTL_SET(0, "stream-bin-out", &stream_create_binary_outputs, "Use binary streams (inline data) instead of shared memory for output streams"),
 	};
 
 	int next_arg = options(argcp, *argvp, "", help_str, ARRAY_SIZE(opts), opts, ARRAY_SIZE(args), args, true);
 
 	if (version)
 		debug_printf(DP_INFO, "%s\n", bart_version);
+
+	toolgraph_create((*argvp)[next_arg], *argcp, *argvp);
 
 	*argcp -= next_arg;
 	*argvp += next_arg;
@@ -307,7 +319,7 @@ static void parse_bart_opts(int* argcp, char*** argvp, int order[DIMS], stream_t
 	int norder = 0;
 
 	for (; norder < DIMS && -1 != param_order[norder]; norder++)
-		if(!MD_IS_SET(flags, param_order[norder]))
+		if (!MD_IS_SET(flags, param_order[norder]))
 			error("Loop order must contain exactly the dimensions specified in the flags (wrong dim).\n");
 
 	if (0 != norder && bitcount(flags) != norder)
@@ -325,12 +337,12 @@ static void parse_bart_opts(int* argcp, char*** argvp, int order[DIMS], stream_t
 
 	for (int i = 0, j = 0; i < DIMS; ++i) {
 
-		if (MD_IS_SET(flags, i)) {
+		if (!MD_IS_SET(flags, i))
+			continue;
 
-			offs_size[i] = param_start[j];
-			loop_dims[i] = param_end[j] - param_start[j];
-			j++;
-		}
+		offs_size[i] = param_start[j];
+		loop_dims[i] = param_end[j] - param_start[j];
+		j++;
 	}
 
 #ifdef _OPENMP
@@ -352,6 +364,9 @@ static void parse_bart_opts(int* argcp, char*** argvp, int order[DIMS], stream_t
 	init_cfl_loop_desc(DIMS, loop_dims, offs_size, flags, omp_threads, 0);
 }
 
+static double time = 0;
+static double time_sq = 0;
+static long count = 0;
 
 static int batch_wrapper(main_fun_t* dispatch_func, int argc, char *argv[argc], long pos)
 {
@@ -369,7 +384,18 @@ static int batch_wrapper(main_fun_t* dispatch_func, int argc, char *argv[argc], 
 	set_cfl_loop_index(pos);
 	num_rand_init(0ULL);
 
+	double loctime = -timestamp();
+
 	int ret = (*dispatch_func)(argc, thread_argv);
+
+	loctime += timestamp();
+
+#pragma omp atomic
+	time += loctime;
+#pragma omp atomic
+	time_sq += loctime * loctime;
+#pragma omp atomic
+	count++;
 
 	io_memory_cleanup();
 
@@ -399,10 +425,8 @@ static bool loop_step(long start, long total, long workers, long* idx, long *idx
 
 	if (NULL != ref_stream) {
 
-	#ifdef USE_MPI
-
-		error("Non-Sequential loops not implemented for MPI.\n");
-	#endif
+		if (1 < mpi_get_num_procs())
+			error("Non-Sequential loops not implemented for MPI.\n");
 
 		long dims[DIMS];
 		long stream_dims[DIMS];
@@ -460,10 +484,8 @@ static bool loop_step(long start, long total, long workers, long* idx, long *idx
 
 
 	//FIXME : Loop Order breaks random number test.
-	#ifdef USE_MPI
-	if (*idx_p != *idx)
+	if ((1 < mpi_get_num_procs()) && (*idx_p != *idx))
 		error("Non-Sequential loops not implemented for MPI.\n");
-	#endif
 
 	return true;
 }
@@ -507,6 +529,7 @@ int main_bart(int argc, char* argv[argc])
 	if (builtin_found) {
 
 		debug_printf(DP_DEBUG3, "Builtin found: %s\n", bn);
+		double tot_time = -timestamp();
 
 		unsigned int v[5];
 		version_parse(v, bart_version);
@@ -534,7 +557,8 @@ int main_bart(int argc, char* argv[argc])
 				long workers = cfl_loop_num_workers();
 				long idx = -1;
 				long idx_p = -1;
-				while(loop_step(start, total, workers, &idx, &idx_p, final_ret, order, ref_stream)) {
+
+				while (loop_step(start, total, workers, &idx, &idx_p, final_ret, order, ref_stream)) {
 
 					int ret = batch_wrapper(dispatch_func, argc, argv, idx_p);
 
@@ -557,12 +581,13 @@ int main_bart(int argc, char* argv[argc])
 
 			mpi_signoff_proc(cfl_loop_desc_active() && (mpi_get_rank() >= total));
 
-			while(loop_step(start, total, workers, &idx, &idx_p, final_ret, order, ref_stream)) {
+			while (loop_step(start, total, workers, &idx, &idx_p, final_ret, order, ref_stream)) {
 
 				int ret = batch_wrapper(dispatch_func, argc, argv, idx_p);
 
-				int tag = ((((idx_p + workers) < total) || (0 != ret)) ? 1 : 0);
-				mpi_signoff_proc(cfl_loop_desc_active() && (0 == tag));
+				bool tag = (idx_p + workers < total) || (0 != ret);
+
+				mpi_signoff_proc(cfl_loop_desc_active() && !tag);
 
 				if (0 != ret) {
 
@@ -575,6 +600,12 @@ int main_bart(int argc, char* argv[argc])
 		deinit_mpi();
 		bart_exit_cleanup();
 
+		tot_time += timestamp();
+		double time_mean = time / count;
+		double time_std = sqrt(time_sq / count - time_mean * time_mean);
+		debug_printf(DP_DEBUG1, "bart %s run in %.2es, time per slice: %.3e +- %.3es\n",
+					bn, tot_time, time_mean, time_std);
+
 		return final_ret;
 
 	} else {
@@ -585,7 +616,7 @@ int main_bart(int argc, char* argv[argc])
 
 #ifdef CHECK_EXE_COMMANDS
 		// also check dirname(PATH_TO_BART)/commands/:
-		char exe_loc[1024] = {0};
+		char exe_loc[1024] = { };
 		ssize_t exe_loc_size = ARRAY_SIZE(exe_loc);
 		ssize_t rl = readlink("/proc/self/exe", exe_loc, (size_t)exe_loc_size);
 

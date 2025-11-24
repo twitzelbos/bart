@@ -14,7 +14,6 @@
  * Christian Holme
  */
 
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stddef.h>
 #include <assert.h>
@@ -548,12 +547,13 @@ static const char* quote(const char* str)
 	return *qstr;
 }
 
+
 const char* command_line = NULL;
 
 char* stdin_command_line = NULL;
 
 
-void* save_command_line(int argc, char* argv[static argc])
+char* serialize_command_line(int argc, char* argv[static argc])
 {
 	size_t len = 0;
 	const char* qargv[argc];
@@ -583,21 +583,26 @@ void* save_command_line(int argc, char* argv[static argc])
 
 	(*buf)[pos] = '\0';
 
+	return *buf;
+}
+
+
+void save_command_line(int argc, char* argv[static argc])
+{
+	char* buf = serialize_command_line(argc, argv);
+
 #pragma omp critical (bart_opts_commandline)
 	{
 		if (NULL == command_line) {
 
-			command_line = *buf;
+			command_line = buf;
 
 		} else {
 
-			assert(0 == strcmp(*buf, command_line));
-			xfree(*buf);
+			assert(0 == strcmp(buf, command_line));
+			xfree(buf);
 		}
 	}
-
-	// FIXME: workaround analyzer detecting a leak
-	return (void*)buf;
 }
 
 

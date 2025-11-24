@@ -51,15 +51,36 @@ void lapack_svd(long M, long N, complex float U[M][M], complex float VH[N][N], f
 	LAPACKE(cgesdd, 'A', M, N, &A[0][0], M, S, &U[0][0], M, &VH[0][0], N);
 }
 
+// AT = VHT ST UT
 void lapack_svd_econ(long M, long N,
-		     complex float U[M][(N > M) ? M : N],
-		     complex float VH[(N > M) ? M : N][N],
+		     complex float U[(N > M) ? M : N][M],
+		     complex float VH[N][(N > M) ? M : N],
 		     float S[(N > M) ? M : N],
 		     complex float A[N][M])
 {
 	PTR_ALLOC(float[MIN(M, N) - 1], superb);
-	LAPACKE(cgesvd, 'S', 'S', M, N, &A[0][0], M, S, &U[0][0], M, &VH[0][0], MIN(M, N), *superb);
+	LAPACKE(cgesvd, NULL != U ? 'S' : 'N', NULL != VH ? 'S' : 'N', M, N, &A[0][0], M, S, NULL != U ? &U[0][0] : NULL, M, NULL != VH ? &VH[0][0] : NULL, MIN(M, N), *superb);
 	PTR_FREE(superb);
+}
+
+// A = QR in Fortran notation
+// A is overwritten with Q only A[MIN(M,N)][M] are valid on exit
+void lapack_qr_econ(long M, long N,
+		    complex float R[N][(N > M) ? M : N],
+		    complex float A[N][M])
+{
+	PTR_ALLOC(complex float[MIN(M, N)], tau);
+	LAPACKE(cgeqrf, M, N, &A[0][0], M, *tau);
+
+	if (NULL != R) {
+
+		for (int i = 0; i < N; i++)
+			for (int j = 0; j < MIN(M, N); j++)
+				R[i][j] = (i <= j) ? A[i][j] : 0.;
+	}
+
+	LAPACKE(cungqr, M, MIN(M, N), MIN(M, N), &A[0][0], M, *tau);
+	PTR_FREE(tau);
 }
 
 void lapack_eig_double(long N, double eigenval[N], complex double matrix[N][N])
@@ -153,4 +174,11 @@ void lapack_sylvester(long N, long M, float* scale, complex float A[N][N], compl
 	// On output: C overwritten by X
 	LAPACKE(ctrsyl, 'N', 'N', +1, N, M, &A[0][0], N, &B[0][0], M, &C[0][0], N, scale);
 }
+
+void lapack_solve_real(long N, float A[N][N], float B[N])
+{
+	int ipiv[N];
+	LAPACKE(sgesv, N, 1, &A[0][0], N, ipiv, B, N);
+}
+
 

@@ -31,7 +31,7 @@ helpstr=$(cat <<- EOF
 EOF
 )
 
-usage="Usage: rtreco.sh [-h,l,f,n,T,A] [(-R|-G|-S|-N)] [-p <# virt. chan.>] [-l <logfile>] [-L <timestamp logfile>] [-s <spokes per frame>] [-t <TURNS=5 / Tiny GA=1>] <kspace> <output> [<coils>]"
+usage="Usage: rtreco.sh [-h,l,f,n,T,A,d] [(-R|-G|-S|-N)] [-p <# virt. chan.>] [-l <logfile>] [-L <timestamp logfile>] [-s <spokes per frame>] [-t <TURNS=5 / Tiny GA=1>] <kspace> <output> [<coils>]"
 
 TURNS=
 ROVIR=false
@@ -48,13 +48,20 @@ SPOKES_PER_FRAME=0
 TOPTS="-o2 -r -D -O"
 SLW=false
 CC_NONE=false
+PHASE_POLE=
+FAST=" --fast"
+GD_CORR=true
+
 : "${NLMEANS_OPTS:=-p3 -d3 -H0.00005 3}"
+: "${NLINV_OPTS:=--cgiter=10 -S --real-time --sens-os=1.25 -i6}"
+: "${ESTDELAY_OPTS:=-R -p20 -r2}"
 
 export TMPDIR=/dev/shm/
+export TMP_TEMPLATE=tmp.rtreco.XXXXXXXXXX
 
 export OMP_NUM_THREADS=1
 
-while getopts "hl:t:fnRTp:SGL:s:AN" opt; do
+while getopts "hl:t:fnRTp:SGL:s:ANPd" opt; do
         case $opt in
 	h)
 		echo "$usage"
@@ -89,6 +96,10 @@ while getopts "hl:t:fnRTp:SGL:s:AN" opt; do
 	p)
 		CHANNELS="$OPTARG"
 	;;
+	P)
+		PHASE_POLE=" --phase-pole=6"
+		FAST=""
+	;;
 	G)
 		GEOM=true
 	;;
@@ -100,6 +111,9 @@ while getopts "hl:t:fnRTp:SGL:s:AN" opt; do
 	;;
 	N)
 		CC_NONE=true
+	;;
+	d)
+		GD_CORR=false
 	;;
         \?)
 		echo "$usage" >&2
@@ -122,7 +136,8 @@ else
 	: "${TURNS:=5}"
 fi
 
-
+export GD_CORR
+export ESTDELAY_OPTS
 export ROVIR
 export TURNS
 export DELAY
@@ -134,6 +149,8 @@ export RAGA
 export TINY
 export SLW
 export CC_NONE
+export PHASE_POLE
+export FAST
 
 if $SLW; then
 	OVERGRIDDING=1
@@ -178,23 +195,6 @@ fi
 export GPU
 
 
-if [ "-" = "$1" ]; then
-	KSP=-
-else
-	KSP=$(readlink -f "$1")
-fi
-
-if [ "-" = "$2" ]; then
-	REC=-
-else
-	REC=$(readlink -f "$2")
-fi
-
-if [ $# -eq 3 ]; then
-	COILS=$(readlink -f "$3")
-fi
-
-
 get_file() {
 	[ "-" = "$1" ] && echo - || echo $(readlink -f "$1")
 }
@@ -207,19 +207,15 @@ delay () (
 	START=$2
 	END=$3
 
-	SRC=$(readlink -f $4)
-	DST=$(readlink -f $5)
+	SRC=$(get_file $4)
+	DST=$(get_file $5)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
-	mkfifo first.fifo
-	mkfifo end1.fifo
-	mkfifo end2.fifo
-	mkfifo meta.fifo
 
-	cat $SRC | bart tee --out0 meta.fifo -n first.fifo end1.fifo			&
+	bart tee -i $SRC --out0 meta.fifo -n first.fifo end1.fifo		&
 	TOT=$(bart show -d $DIM meta.fifo)
 
 	END=$((TOT-END))
@@ -231,6 +227,31 @@ delay () (
 )
 
 
+# Reshape incoming k-space data
+reshape_radial_ksp() (
+
+	ksp=$(get_file $1)
+	output=$(get_file $2)
+
+        WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
+        trap 'rm -rf "$WORKDIR"' EXIT
+        cd "$WORKDIR" || exit
+
+	bart tee -i $ksp -n --out0 meta.fifo ksp.fifo &
+
+        dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
+
+        samples=$(echo $dims | cut -f1 -d' ')
+        spokes=$(echo $dims | cut -f2 -d' ')
+	frames=$(echo $dims | cut -f11 -d' ')
+
+	if [ 1 -eq $samples ]; then
+
+		bart -r ksp.fifo copy ksp.fifo $output
+	else
+		bart reshape -s $(bart bitmask 2 10) $(bart bitmask 0 1 2 10) 1 $samples $spokes $frames ksp.fifo $output
+	fi
+)
 
 # Arguments:
 # $1 = Input File (stream) to be reordered.
@@ -244,14 +265,11 @@ rebin_raga() (
         [ "-" = "$1" ] && SRC=- || SRC=$(readlink -f "$1")
         [ "-" = "$2" ] && DST=- || DST=$(readlink -f "$2")
 
-        WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+        WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
         trap 'rm -rf "$WORKDIR"' EXIT
         cd "$WORKDIR" || exit
 
-        mkfifo meta.fifo
-        mkfifo ksp.fifo
-        bart -r $SRC copy $SRC - |\
-		bart tee -n --out0 meta.fifo ksp.fifo &
+	bart tee -i $SRC -n --out0 meta.fifo ksp.fifo &
 
         dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
 
@@ -292,23 +310,17 @@ filter () (
 	SRC=$(readlink -f $2)
 	DST=$(readlink -f $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
 	FIFOS=""
 
 	for i in $(seq $WIN) ; do
-
-		mkfifo fil_0_$i.fifo
-		mkfifo fil_1_$i.fifo
-
 		SLIC+=" fil_0_$i.fifo"
 		JOIN+=" fil_1_$i.fifo"
 	done
 
-	mkfifo meta.fifo
-	mkfifo delay.fifo
 
 	delay 10 $((WIN-1)) 0 $SRC delay.fifo &
 
@@ -316,7 +328,6 @@ filter () (
 	TOT=$(bart show -d10 meta.fifo)
 
 	for i in $(seq $WIN) ; do
-
 		bart -l1024 -s $((i-1)) -e $((TOT-WIN+i)) flip 0 fil_0_$i.fifo fil_1_$i.fifo &
 	done
 
@@ -331,16 +342,9 @@ sliding_window() (
 	DELAYS=$((WINDOW_SIZE - 1))
 	DST=$(get_file $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
-
-	mkfifo tmp.fifo
-	mkfifo meta.fifo
-	for i in $(seq $DELAYS); do
-		mkfifo input_$i.fifo
-		mkfifo delay_$i.fifo
-	done
 
 	bart copy --stream 1024 $INPUT -							|\
 	bart tee -n --out0 meta.fifo tmp.fifo $(seq -s' ' -f "input_%g.fifo" $DELAYS)		&
@@ -365,11 +369,10 @@ rl_filter_ksp () (
 	TRJ=$(get_file $2)
 	OUT=$(get_file $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
-	mkfifo filter.fifo
 	bart -r $TRJ rss 1 $TRJ filter.fifo							&
 	bart -r $KSP fmac filter.fifo $KSP $OUT
 )
@@ -383,60 +386,88 @@ trajectory () (
 	KSP=$(readlink -f $1)
 	DST=$(readlink -f $2)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	GRAD_DELAYS=
+	if [ $# -eq 3 ]; then
+		GRAD_DELAYS=$(readlink -f $3)
+	fi
+
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
-	mkfifo ksp_tmp.fifo
-	mkfifo meta0.fifo
-	mkfifo meta1.fifo
-	mkfifo meta2.fifo
-	mkfifo trj_gd.fifo
+	bart tee -i $KSP --out0 meta.fifo	| \
+	bart copy --stream 1024 - ksp_tmp.fifo	&
 
-	cat $KSP 					| \
-	bart tee --out0 meta0.fifo 			| \
-	bart tee --out0 meta1.fifo 			| \
-	bart tee --out0 meta2.fifo 			| \
-	bart copy --stream 1024 -- - ksp_tmp.fifo	&
+	dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
+	READ=$(($(echo $dims | cut -f2 -d' ')/2))
+	PHS1=$(echo $dims | cut -f3 -d' ')
+	TOT=$(echo $dims | cut -f11 -d' ')
 
-	READ=$(($(bart show -d 1 meta0.fifo)/2))
-	PHS1=$(bart show -d 2 meta1.fifo)
-	TOT=$(bart show -d 10 meta2.fifo)
+	DST1=$DST
+	trj_gd=
+	gd_delay_dim=10
+	if $GD_CORR; then
+		DST1=trj.fifo
+		trj_gd=trj_gd.fifo
+	fi
 
 	if $RAGA; then
 		TOPTS="$TOPTS -x$READ -y$SPOKE_FF"
 
-		bart show -m ksp_tmp.fifo > /dev/null &
+		bart traj $TOPTS - 					|\
+		bart repmat 10 $FULL_FRAMES - trj_full
+		rebin_raga trj_full trj_rebinned.fifo			&
+		bart tee -n -i trj_rebinned.fifo $trj_gd $DST1	 	&
 
-		set -x
-		bart traj $TOPTS - |\
-		bart repmat 10 $FULL_FRAMES - trj_tmp;
-		rebin_raga trj_tmp $DST
-		set +x
-	elif $SLW; then
-		TOPTS="$TOPTS -x$READ -y$PHS1 -t$TURNS"
-
-		bart traj $TOPTS -					|\
-		bart repmat 11 $((TOT / TURNS)) - -			|\
-		bart reshape $(bart bitmask 10 11) $TOT 1 -  -		|\
-		bart copy --stream 1024 - $DST
+		if $GD_CORR; then
+			bart -r ksp_tmp.fifo copy ksp_tmp.fifo ksp_gd.fifo &
+		fi
 	else
 		TOPTS="$TOPTS -x$READ -y$PHS1 -t$TURNS"
 
 		bart traj $TOPTS trj_tmp
-		bart reshape -- $(bart bitmask 2 10) $((PHS1 * TURNS)) 1 trj_tmp trj_gd.fifo &
+		if $SLW && ! $GD_CORR; then
+			bart repmat 11 $((TOT / TURNS)) trj_tmp -		|\
+			bart reshape $(bart bitmask 10 11) $TOT 1 - $DST1 	&
+		else
+			bart copy trj_tmp $DST1					&
+		fi
 
-		bart 		reshape -s 2048 -- $(bart bitmask 2 10 11) $((PHS1 * TURNS)) 1 $((TOT / TURNS)) ksp_tmp.fifo -		| \
-		bart -t4 -r - 	estdelay -p10 -R -r2 -- trj_gd.fifo - predelay.fifo &
+		if $GD_CORR; then
+			gd_delay_dim=11
+			bart reshape $(bart bitmask 2 10)			\
+				$((PHS1 * TURNS)) 1 trj_tmp $trj_gd		&
 
-		mkfifo predelay.fifo
-		mkfifo postdelay.fifo
-
-		delay 11 $DELAY $DELAY predelay.fifo postdelay.fifo &
-
-		bart -t4 -r postdelay.fifo 	traj $TOPTS -V postdelay.fifo -- -								| \
-		bart 				reshape -s 1024 -- $(bart bitmask 2 10 11) $PHS1 $TOT 1 - $DST
+			bart 	reshape -s 2048 $(bart bitmask 2 10 11) 	\
+				$((PHS1 * TURNS)) 1 $((TOT / TURNS)) 		\
+				ksp_tmp.fifo ksp_gd.fifo 			&
+		fi
 	fi
+
+	if $GD_CORR; then
+		echo "estdelay options: $ESTDELAY_OPTS"				>&2
+
+		bart -t4 -r ksp_gd.fifo estdelay $ESTDELAY_OPTS			\
+			$trj_gd ksp_gd.fifo - 					|\
+		bart tee -n $GRAD_DELAYS predelay.fifo 				&
+
+		delay $gd_delay_dim $DELAY $DELAY predelay.fifo delays.fifo 	&
+
+		bart -t4 -r delays.fifo						\
+			trajcor -V delays.fifo $DST1 trj_cor.fifo		&
+
+		if $RAGA; then
+			bart -r trj_cor.fifo copy trj_cor.fifo $DST		&
+		else
+			bart reshape -s 1024 $(bart bitmask 2 10 11) 		\
+				$PHS1 $TOT 1 trj_cor.fifo $DST
+		fi
+	else
+		bart show -m ksp_tmp.fifo > /dev/null &
+	fi
+
+	# prevent early deletion of static files:
+	wait
 )
 
 
@@ -449,29 +480,21 @@ coilcompression_svd () (
 	TRJ=$(readlink -f $2)
 	DST=$(readlink -f $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
-	mkfifo ksp_tmp.fifo
-	mkfifo meta0.fifo
-	mkfifo meta1.fifo
-	mkfifo predelay.fifo
-	mkfifo cc.fifo
-	mkfifo tmp.fifo
+	bart tee -i $KSP --out0 meta.fifo 					| \
+	bart copy --stream 1024 -- - ksp_tmp.fifo				&
 
-	cat $KSP 											| \
-	bart tee --out0 meta0.fifo 									| \
-	bart tee --out0 meta1.fifo 									| \
-	bart copy --stream 1024 -- - ksp_tmp.fifo							&
+	dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
+	PHS=$(echo $dims | cut -f3 -d' ')
+	TOT=$(echo $dims | cut -f11 -d' ')
 
-	PHS=$(bart show -d 2 meta0.fifo)
-	TOT=$(bart show -d 10 meta1.fifo)
-
+	mkfifo $TRJ || true
 	cat $TRJ > /dev/null &
 
-	cat ksp_tmp.fifo										| \
-	bart		tee tmp.fifo									| \
+	bart		tee -i ksp_tmp.fifo tmp.fifo							| \
 	bart 		reshape -s1024 -- $(bart bitmask 2 10) $((PHS*TURNS)) $((TOT/TURNS)) - -	| \
 	bart -r -	cc -M -- - predelay.fifo							&
 
@@ -491,31 +514,21 @@ coilcompression_svd_first () (
 	TRJ=$(readlink -f $2)
 	DST=$(readlink -f $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
-	mkfifo ksp_tmp.fifo
-	mkfifo meta0.fifo
-	mkfifo meta1.fifo
-	mkfifo predelay.fifo
-	mkfifo cc.fifo
-	mkfifo cc2.fifo
-	mkfifo tmp.fifo
-	mkfifo ccmat.fifo
+	bart tee -i $KSP --out0 meta.fifo 					| \
+	bart copy --stream 1024 -- - ksp_tmp.fifo				&
 
-	cat $KSP 											| \
-	bart tee --out0 meta0.fifo 									| \
-	bart tee --out0 meta1.fifo 									| \
-	bart copy --stream 1024 -- - ksp_tmp.fifo							&
+	dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
+	PHS=$(echo $dims | cut -f3 -d' ')
+	TOT=$(echo $dims | cut -f11 -d' ')
 
-	PHS=$(bart show -d 2 meta0.fifo)
-	TOT=$(bart show -d 10 meta1.fifo)
-
+	mkfifo $TRJ || true;
 	cat $TRJ > /dev/null &
 
-	cat ksp_tmp.fifo										| \
-	bart		tee tmp.fifo									| \
+	bart		tee -i ksp_tmp.fifo tmp.fifo							| \
 	bart 		reshape -s1024 -- $(bart bitmask 2 10) $((PHS*TURNS)) $((TOT/TURNS)) - -	| \
 	bart -r -	cc -M -- - - | bart tee -n cc.fifo						&
 
@@ -533,24 +546,17 @@ coilcompression_rovir () (
 	TRJ=$(readlink -f $2)
 	DST=$(readlink -f $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
-	mkfifo ksp_tmp.fifo
-	mkfifo meta0.fifo
-	mkfifo meta1.fifo
-	mkfifo meta2.fifo
+	bart tee -i $KSP --out0 meta.fifo	| \
+	bart copy --stream 1024 - ksp_tmp.fifo	&
 
-	cat $KSP 					| \
-	bart tee --out0 meta0.fifo 			| \
-	bart tee --out0 meta1.fifo 			| \
-	bart tee --out0 meta2.fifo 			| \
-	bart copy --stream 1024 -- - ksp_tmp.fifo	&
-
-	READ=$(($(bart show -d 1 meta0.fifo)/2))
-	PHS=$(bart show -d 2 meta1.fifo)
-	TOT=$(bart show -d 10 meta2.fifo)
+	dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
+	READ=$(($(echo $dims | cut -f2 -d' ')/2))
+	PHS=$(echo $dims | cut -f3 -d' ')
+	TOT=$(echo $dims | cut -f11 -d' ')
 
 	bart ones 2 20 20 o
 	bart resize -c 0 40 1 40 o pos
@@ -567,26 +573,11 @@ coilcompression_rovir () (
 	DIMS=40:40:1
 	bart nufftbase $DIMS trjos pat
 
-	mkfifo ksp_rovir.fifo
-	mkfifo trj_rovir1.fifo
-	mkfifo trj_rovir2.fifo
-	mkfifo cim1.fifo
-	mkfifo cim2.fifo
-	mkfifo ipos.fifo
-	mkfifo ineg.fifo
-	mkfifo pos.fifo
-	mkfifo neg.fifo
-	mkfifo ksp.fifo
-	mkfifo cc.fifo
-	mkfifo cc_init.fifo
-	mkfifo ksp_cc.fifo
-	mkfifo predelay.fifo
 
-	cat ksp_tmp.fifo											| \
-	bart		tee tmp.fifo										| \
+	bart		tee -i ksp_tmp.fifo tmp.fifo								| \
 	bart 		reshape -s1024 -- $(bart bitmask 2 10) $((PHS*TURNS)) $((TOT/TURNS)) - ksp_rovir.fifo	&
 
-	cat $TRJ												| \
+	bart -r $TRJ copy $TRJ -										| \
 	bart -t4 -r -	scale -- 2 - - 										| \
 	bart 		reshape -s1024 -- $(bart bitmask 2 10) $((PHS*TURNS)) $((TOT/TURNS)) - -		| \
 	bart 		tee trj_rovir1.fifo trj_rovir2.fifo							| \
@@ -617,28 +608,21 @@ coilcompression_geom () (
 	TRJ=$(readlink -f $2)
 	DST=$(readlink -f $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
-	mkfifo tmp.fifo
-	mkfifo ksp_tmp.fifo
-	mkfifo meta0.fifo
-	mkfifo meta1.fifo
-	mkfifo predelay.fifo
-	mkfifo cc.fifo
+	bart tee -i $KSP --out0 meta.fifo 					| \
+	bart copy --stream 1024 -- - ksp_tmp.fifo				&
 
-	cat $KSP 											| \
-	bart tee --out0 meta0.fifo 									| \
-	bart tee --out0 meta1.fifo 									| \
-	bart copy --stream 1024 -- - ksp_tmp.fifo							&
+	dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
+	PHS=$(echo $dims | cut -f3 -d' ')
+	TOT=$(echo $dims | cut -f11 -d' ')
 
-	PHS=$(bart show -d 2 meta0.fifo)
-	TOT=$(bart show -d 10 meta1.fifo)
-
+	mkfifo $TRJ || true
 	cat $TRJ > /dev/null &
 
-	cat ksp_tmp.fifo										| \
+	bart -r ksp_tmp.fifo copy ksp_tmp.fifo -					| \
 	bart		tee tmp.fifo									| \
 	bart 		reshape -s1024 -- $(bart bitmask 2 10) $((PHS*TURNS)) $((TOT/TURNS)) - -	| \
 	bart -r -	cc -M -- - predelay.fifo							&
@@ -660,7 +644,7 @@ coilcompression_none () (
 	TRJ=$(readlink -f $2)
 	DST=$(readlink -f $3)
 
-	WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
 	trap 'rm -rf "$WORKDIR"' EXIT
 	cd "$WORKDIR" || exit
 
@@ -668,135 +652,148 @@ coilcompression_none () (
 )
 
 
-WORKDIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
-trap 'rm -rf "$WORKDIR"; kill $(jobs -p) || true' EXIT
-cd "$WORKDIR" || exit
 
+build_pipeline ()
 {
-
-echo "WORKING_DIR:    $WORKDIR" >> $LOGFILE
-echo "k-Space:        $KSP" 	>> $LOGFILE
-echo "Reconstruction: $REC" 	>> $LOGFILE
-
-
-mkfifo meta.fifo
-mkfifo ksp0.fifo
-mkfifo ksp.fifo
-
-bart -r $KSP copy $KSP - |\
-bart tee -n --out0 meta.fifo ksp0.fifo &
-
-dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
-
-# cut uses one based indexing
-READ=$(echo $dims | cut -f2 -d' ')
-SPOKE_FF=$(echo $dims | cut -f3 -d' ')
-FULL_FRAMES=$(echo $dims | cut -f11 -d' ')
-export SPOKE_FF
-export FULL_FRAMES
-
-DIM0=$(echo $dims | cut -f1 -d' ')
-if [ 1 -ne $DIM0 ]; then
-	echo "Radial k-Space needs dim[0] == 1. Exiting.."
-fi
-
-
-if $RAGA; then
-	rebin_raga ksp0.fifo ksp.fifo &
-else
-	bart -r ksp0.fifo copy ksp0.fifo ksp.fifo &
-fi
-
-
-RDIMS=$((READ/2))
-GDIMS=$(echo "scale=0;($RDIMS*$OVERGRIDDING+0.5)/1" | bc -l)
-
-# not neccessary, pattern is dynamically estimated in nlinv
-# bart ones 3 1 $READ $PHS1 pat
-
-
-mkfifo ksp_reco.fifo
-mkfifo trj_reco.fifo
-
-mkfifo ksp_gd.fifo
-mkfifo trj.fifo
-trajectory ksp_gd.fifo trj.fifo &
-
-
-mkfifo ksp_cc.fifo
-mkfifo trj_cc.fifo
-
-if $ROVIR ; then
-	coilcompression_rovir		ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
-elif $STATIC_COILS ; then
-	coilcompression_svd_first	ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
-elif $GEOM; then
-	coilcompression_geom	ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
-elif $CC_NONE; then
-	coilcompression_none		ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
-else
-	coilcompression_svd		ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
-fi
-
-cat trj.fifo | bart tee trj_cc.fifo | bart -r - scale -- $OVERGRIDDING - trj_reco.fifo &
-cat ksp.fifo | bart tee -n ksp_gd.fifo ksp_cc.fifo &
-
-if $FILTER; then
-	mkfifo reco.fifo
-	OUT=reco.fifo
-else
-	OUT=$REC
-fi
-
-if $SLW; then
-
-	window_size=$TURNS
-
-	mkfifo trj_sw1.fifo trj_sw2.fifo
-
-	sliding_window trj_reco.fifo $window_size -		|\
-		bart tee -n trj_sw1.fifo trj_sw2.fifo		&
-
-
-	mkfifo tmp.fifo tmp2.fifo
-	sliding_window ksp_reco.fifo $window_size -		|\
-		rl_filter_ksp - trj_sw1.fifo tmp.fifo		&
-
-	OMP_NUM_THREADS=4 BART_STREAM_LOG=$TIMELOG bart -r tmp.fifo		\
-		nufft -x$RDIMS:$RDIMS:1 -a trj_sw2.fifo tmp.fifo tmp2.fifo	&
-
-	bart -r tmp2.fifo rss 8 tmp2.fifo - |\
-	bart -r - flip 3 - $OUT &
-else
-
-	BART_STREAM_LOG=$TIMELOG bart nlinv		\
-		--cgiter=10 -S --real-time --fast $GPU	\
-		--sens-os=1.25 -i6 -x$GDIMS:$GDIMS:1	\
-		-t trj_reco.fifo ksp_reco.fifo - $COILS	|\
-	bart -r - flip 3 - -				| \
-	bart -r - resize -c 0 $RDIMS 1 $RDIMS - $OUT	&
-
-fi
-
-
-if $FILTER ; then
-	mkfifo reco_fil.fifo
-	filter 5 reco.fifo reco_fil.fifo &
-	if $NLMEANS; then
-
-		OMP_NUM_THREADS=4 BART_STREAM_LOG=$TIMELOG''_filter bart -r reco_fil.fifo \
-			nlmeans $NLMEANS_OPTS reco_fil.fifo $REC &
+	KSP=$(get_file $1)
+	REC=$(get_file $2)
+	if [ $# -eq 3 ]; then
+		COILS=$(get_file $3)
+		COILS_TMP=coils.fifo
 	else
-		BART_STREAM_LOG=$TIMELOG''_filter bart -r reco_fil.fifo copy reco_fil.fifo $REC &
-
+		COILS=
+		COILS_TMP=
 	fi
+
+
+	WORKDIR=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
+	trap 'rm -rf "$WORKDIR"; kill $(jobs -p) || true' EXIT
+	cd "$WORKDIR" || exit
+
+	echo "WORKING_DIR:    $WORKDIR" >> $LOGFILE
+	echo "k-Space:        $KSP" 	>> $LOGFILE
+	echo "Reconstruction: $REC" 	>> $LOGFILE
+
+	reshape_radial_ksp $KSP - |\
+	BART_STREAM_LOG=$TIMELOG'_incoming' bart tee -n --out0 meta.fifo ksp0.fifo &
+
+	dims=$(bart show -m meta.fifo | tail -n1 | cut -f2-)
+
+	# cut uses one based indexing
+	READ=$(echo $dims | cut -f2 -d' ')
+	SPOKE_FF=$(echo $dims | cut -f3 -d' ')
+	FULL_FRAMES=$(echo $dims | cut -f11 -d' ')
+	export SPOKE_FF
+	export FULL_FRAMES
+
+	DIM0=$(echo $dims | cut -f1 -d' ')
+	if [ 1 -ne $DIM0 ]; then
+		echo "Radial k-Space needs dim[0] == 1. Exiting.."
+	fi
+
+
+	if $RAGA; then
+		rebin_raga ksp0.fifo ksp.fifo &
+	else
+		bart -r ksp0.fifo copy ksp0.fifo ksp.fifo &
+	fi
+
+
+	RDIMS=$((READ/2))
+	GDIMS=$(echo "scale=0;($RDIMS*$OVERGRIDDING+0.5)/1" | bc -l)
+
+	: ${IMG_SIZE:=$GDIMS:$GDIMS:1}
+
+	trajectory ksp_gd.fifo trj.fifo $GRAD_DELAYS &
+
+
+	if $ROVIR ; then
+		coilcompression_rovir		ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
+	elif $STATIC_COILS ; then
+		coilcompression_svd_first	ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
+	elif $GEOM; then
+		coilcompression_geom		ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
+	elif $CC_NONE; then
+		coilcompression_none		ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
+	else
+		coilcompression_svd		ksp_cc.fifo trj_cc.fifo ksp_reco.fifo &
+	fi
+
+	bart tee -i trj.fifo trj_cc.fifo | bart -r - scale -- $OVERGRIDDING - trj_reco.fifo &
+	bart tee -i ksp.fifo -n ksp_gd.fifo ksp_cc.fifo &
+
+	if $FILTER; then
+		OUT=reco.fifo
+	else
+		OUT=$REC
+	fi
+
+	if $SLW; then
+
+		window_size=$TURNS
+
+		sliding_window trj_reco.fifo $window_size -		|\
+			bart tee -n trj_sw1.fifo trj_sw2.fifo		&
+
+		sliding_window ksp_reco.fifo $window_size -		|\
+			rl_filter_ksp - trj_sw1.fifo tmp.fifo		&
+
+		OMP_NUM_THREADS=4 BART_STREAM_LOG=$TIMELOG bart -r tmp.fifo		\
+			nufft -x$RDIMS:$RDIMS:1 -a trj_sw2.fifo tmp.fifo tmp2.fifo	&
+
+		bart -r tmp2.fifo rss 8 tmp2.fifo - |\
+		bart -r - flip 3 - $OUT &
+	else
+
+		BART_STREAM_LOG=$TIMELOG bart nlinv			\
+			$NLINV_OPTS					\
+			$FAST $PHASE_POLE $GPU -x$IMG_SIZE 		\
+			-t trj_reco.fifo ksp_reco.fifo - $COILS_TMP |\
+		bart -r - flip 3 - -				| \
+		bart -r - resize -c 0 $RDIMS 1 $RDIMS - $OUT	&
+
+		if [ ! -z $COILS_TMP ]; then
+			bart flip -- 3 $COILS_TMP - |\
+			bart resize -c -- 0 $RDIMS 1 $RDIMS - $COILS &
+		fi
+	fi
+
+
+	if $FILTER ; then
+		filter 5 reco.fifo reco_fil.fifo &
+		if $NLMEANS; then
+
+			OMP_NUM_THREADS=16 BART_STREAM_LOG=$TIMELOG${TIMELOG:+_filter} bart -r reco_fil.fifo \
+				nlmeans $NLMEANS_OPTS reco_fil.fifo $REC &
+		else
+			BART_STREAM_LOG=$TIMELOG${TIMELOG:+_filter} bart -r reco_fil.fifo copy reco_fil.fifo $REC &
+
+		fi
+	fi
+
+	# before removing tmpdir:
+	wait
+}
+
+KSP=$1
+REC=$2
+COILS=
+if [ $# -eq 3 ]; then
+	COILS=$(readlink -f "$3")
 fi
 
-} 2>>$LOGFILE
+if [ "-" = "$1" ]; then
+	stdin_tmpdir=$(mktemp --tmpdir -d $TMP_TEMPLATE 2>/dev/null)
+	trap 'rm -rf "$stdin_tmpdir"' EXIT
+	KSP=$stdin_tmpdir/stdin.fifo
+	mkfifo $KSP
+fi
+
+build_pipeline $KSP $REC $COILS 2>>$LOGFILE &
+
+if [ "-" = "$1" ]; then
+	# 'catch' stdin and block until it's closed:
+	cat > $KSP
+fi
 
 wait
-
-if [ -f "$COILS.hdr" ]; then
-	bart flip -- 3 $COILS tmp_coils
-	bart resize -c -- 0 $RDIMS 1 $RDIMS tmp_coils $COILS;
-fi

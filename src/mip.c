@@ -6,7 +6,6 @@
  * 2014-2016 Jonathan Tamir
  */
 
-#define _GNU_SOURCE
 #include <stdbool.h>
 #include <complex.h>
 
@@ -92,3 +91,4 @@ int main_mip(int argc, char* argv[argc])
 
 	return 0;
 }
+

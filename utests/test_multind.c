@@ -380,7 +380,7 @@ static bool test_md_unravel_index_permuted(void)
 
 	long idx = 8;
 
-	md_unravel_index_permuted(3, order, pos, 7UL, dims, idx);
+	md_unravel_index_permuted(3, pos, 7UL, dims, idx, order);
 	
 	UT_RETURN_ON_FAILURE(md_check_equal_dims(3, good, pos, 7UL));
 
@@ -388,4 +388,21 @@ static bool test_md_unravel_index_permuted(void)
 }
 
 UT_REGISTER_TEST(test_md_unravel_index_permuted);
+
+
+static bool test_md_ravel_index_permuted(void)
+{
+	const int order[] = { 2, 0, 3, 1 };
+
+	const long dims[] = { 2, 4, 3, 5 };
+
+	const long pos[4]  = { 1, 2, 1, 4 };
+
+	if (43 != md_ravel_index_permuted(4, pos, 14UL, dims, order))
+		return false;
+
+	return true;
+}
+
+UT_REGISTER_TEST(test_md_ravel_index_permuted);
 

@@ -43,6 +43,7 @@
 #include "moba/T1fun.h"
 #include "moba/blochfun.h"
 #include "moba/moba.h"
+#include "moba/lorentzian.h"
 
 #include "simu/signals.h"
 
@@ -65,7 +66,7 @@ struct mobafit_bound_s {
 	float* max;
 };
 
-DEF_TYPEID(mobafit_bound_s)
+DEF_TYPEID(mobafit_bound_s);
 
 static void mobafit_bound(iter_op_data* _data, float* dst, const float* src)
 {
@@ -144,9 +145,10 @@ int main_mobafit(int argc, char* argv[argc])
 	bounds.min = bound_min;
 	bounds.max = bound_max;
 
-	enum seq_type { /* BSSFP, FLASH, MOLLI, */ TSE, MGRE, DIFF, IR_LL, IR, SIM } seq = MGRE;
+	enum seq_type { /* BSSFP, FLASH, MOLLI, */ TSE, MGRE, DIFF, IR_LL, IR, SIM, MPL } seq = MGRE;
 
 	int mgre_model = MECO_WFR2S;
+	int num_lorentzian_pools = 0;
 
 	int iter = 5;
 
@@ -188,13 +190,13 @@ int main_mobafit(int argc, char* argv[argc])
 		/* Sequences Specific Parameters */
 		OPTL_FLOAT(0, "TR", &(sim.seq.tr), "float", "Repetition time [s]"),
 		OPTL_FLOAT(0, "TE", &(sim.seq.te), "float", "Echo time [s]"),
-		OPTL_INT(0, "Nspins", &(sim.seq.spin_num), "int", "Number of averaged spins"),
-		OPTL_INT(0, "Nrep", &(sim.seq.rep_num), "int", "Number of repetitions"),
+		OPTL_PINT(0, "Nspins", &(sim.seq.spin_num), "int", "Number of averaged spins"),
+		OPTL_PINT(0, "Nrep", &(sim.seq.rep_num), "int", "Number of repetitions"),
 		OPTL_SET(0, "pinv", &(sim.seq.perfect_inversion), "Use perfect inversions"),
 		OPTL_FLOAT(0, "ipl", &(sim.seq.inversion_pulse_length), "float", "Inversion Pulse Length [s]"),
 		OPTL_FLOAT(0, "isp", &(sim.seq.inversion_spoiler), "float", "Inversion Spoiler Gradient Length [s]"),
 		OPTL_FLOAT(0, "ppl", &(sim.seq.prep_pulse_length), "float", "Preparation Pulse Length [s]"),
-		OPTL_INT(0, "av-spokes", &(sim.seq.averaged_spokes), "", "Number of averaged consecutive spokes"),
+		OPTL_PINT(0, "av-spokes", &(sim.seq.averaged_spokes), "", "Number of averaged consecutive spokes"),
 		OPTL_FLOAT(0, "m0", &(sim.voxel.m0[0]), "float", "m0"),
 
 		/* Pulse Specific Parameters */
@@ -220,7 +222,7 @@ int main_mobafit(int argc, char* argv[argc])
 
 	struct opt_s pool_opts[] = {
 
-		OPT_INT('P', &(sim.voxel.P), "int", "Number of pools"),
+		OPT_PINT('P', &(sim.voxel.P), "int", "Number of pools"),
 	};
 
 	struct opt_s cest_opts[] = {
@@ -230,12 +232,15 @@ int main_mobafit(int argc, char* argv[argc])
 		OPTL_FLOAT(0, "gamma", &(sim.cest.gamma), "float", "Gyromagnetic ratio [Mhz/T]"),
 		OPTL_FLOAT(0, "max", &(sim.cest.off_start), "float", "Max offset [ppm]"),
 		OPTL_FLOAT(0, "min", &(sim.cest.off_stop), "float", "Min offset [ppm]"),
-		OPTL_INT(0, "n_p", &(sim.cest.n_pulses), "int", "Number of pulses"),
+		OPTL_PINT(0, "n_p", &(sim.cest.n_pulses), "int", "Number of pulses"),
 		OPTL_FLOAT(0, "t_d", &(sim.cest.t_d), "float", "Interpulse delay [s]"),
 		OPTL_FLOAT(0, "t_pp", &(sim.cest.t_pp), "float", "Post-preparation delay [s]"),
 		OPTL_SET(0, "ref_scan", &(sim.cest.ref_scan), "Use reference scan"),
 		OPTL_FLOAT(0, "ref_scan_ppm", &(sim.cest.ref_scan_ppm), "float", "Offset for ref. scan [ppm]"),
 	};
+
+	bool use_lm = false;
+	int liniter = 50;
 
 	const struct opt_s opts[] = {
 
@@ -246,18 +251,21 @@ int main_mobafit(int argc, char* argv[argc])
 #endif
 		OPT_SELECT('T', enum seq_type, &seq, TSE, "Multi-Echo Spin Echo: f(M0, R2) = M0 * exp(-t * R2)"),
 		OPT_SELECT('I', enum seq_type, &seq, IR, "Inversion Recovery: f(M0, R1, c) =  M0 * (1 - exp(-t * R1 + c))"),
-		OPT_SELECT('L', enum seq_type, &seq, IR_LL, "Inversion Recovery Look-Locker"),
+		OPT_SELECT('L', enum seq_type, &seq, IR_LL, "Inversion Recovery Look-Locker: f(Mss, M0, R1s) = Mss - (Mss + M0) * exp(-t * R1s)"),
 		OPT_SELECT('G', enum seq_type, &seq, MGRE, "MGRE"),
 		OPT_SELECT('D', enum seq_type, &seq, DIFF, "diffusion"),
 		OPT_SELECT('S', enum seq_type, &seq, SIM, "Simulation based fitting"),
 		OPT_PINT('m', &mgre_model, "model", "Select the MGRE model from enum { WF = 0, WFR2S, WF2R2S, R2S, PHASEDIFF } [default: WFR2S]"),
 		OPT_SET('a', &use_magn, "fit magnitude of signal model to data"),
 		OPT_PINT('i', &iter, "iter", "Number of IRGNM steps"),
+		OPT_PINT('M', &num_lorentzian_pools, "num_lorentzian_pools", "Multi-Pool-Lorentzian - Number of pools"),
 		OPT_SET('g', &bart_use_gpu, "use gpu"),
 		OPT_INFILE('B', &basis_file, "file", "temporal (or other) basis"),
 		OPTL_FLVECN(0, "init", init0, "Initial values of parameters in model-based reconstruction"),
 		OPTL_FLVECN(0, "scale", scale0, "Scaling"),
 
+		OPTL_SET(0, "levenberg-marquardt", &(use_lm), "Use Levenberg-Marquardt instead of Gauss-Newton"),
+		OPTL_INT(0, "liniter", &liniter, "iter", "(iterations for solving linearized problem)"),
 		OPTL_ULONG(0, "min-flag", &(bounds.min_flags), "flags", "Apply minimum constraint on selected maps"),
 		OPTL_ULONG(0, "max-flag", &(bounds.max_flags), "flags", "Apply maximum constraint on selected maps"),
 		OPTL_ULONG(0, "max-mag-flag", &(bounds.max_norm_flags), "flags", "Apply maximum magnitude constraint on selected maps"),
@@ -274,10 +282,15 @@ int main_mobafit(int argc, char* argv[argc])
 
 	cmdline(&argc, argv, ARRAY_SIZE(args), args, help_str, ARRAY_SIZE(opts), opts);
 
+
+	if (num_lorentzian_pools > 0)
+		seq = MPL;
+	
 	num_init_gpu_support();
 
 	long bas_dims[DIMS];
 	complex float* basis = NULL;
+
 
 	if (NULL != basis_file) {
 
@@ -329,6 +342,9 @@ int main_mobafit(int argc, char* argv[argc])
 	long x_dims[DIMS];
 	md_select_dims(DIMS, ~(TE_FLAG | COEFF_FLAG), x_dims, y_dims);
 
+
+
+
 	switch (seq) {
 
 	case IR:
@@ -363,7 +379,12 @@ int main_mobafit(int argc, char* argv[argc])
 		x_dims[COEFF_DIM] = (1 == sim.voxel.P) ? 4 : (5 * sim.voxel.P) - 1;
 		break;
 
+	case MPL:
+		x_dims[COEFF_DIM] = 1 + 3 * num_lorentzian_pools;
+		break;
+
 	default:
+		debug_printf(DP_DEBUG2, "Sequence Type %c \n", seq);
 
 		error("sequence type not supported\n");
 	}
@@ -372,7 +393,6 @@ int main_mobafit(int argc, char* argv[argc])
 	complex float* x = create_cfl(coeff_file, DIMS, x_dims);
 
 	md_zfill(DIMS, x_dims, x, 1.);
-
 
 	long y_patch_dims[DIMS];
 	long x_patch_dims[DIMS];
@@ -455,6 +475,15 @@ int main_mobafit(int argc, char* argv[argc])
 			nlop = nlop_flatten(nl);
 			nlop_free(nl);
 		}
+		break;
+
+	case MPL:
+
+		assert(md_check_equal_dims(DIMS, y_patch_dims, y_patch_sig_dims, ~0UL));
+		md_copy_dims(DIMS, dims, y_patch_dims);
+		dims[COEFF_DIM] = enc_dims[COEFF_DIM];
+
+		nlop = nlop_lorentzian_multi_pool_create(DIMS, y_patch_dims, x_patch_dims, enc_dims, enc);
 		break;
 
 	case SIM:
@@ -564,6 +593,11 @@ int main_mobafit(int argc, char* argv[argc])
 	struct iter3_irgnm_conf irgnm_conf = iter3_irgnm_defaults;
 	irgnm_conf.iter = iter;
 
+	struct iter3_levenberg_marquardt_conf lm_conf = iter3_levenberg_marquardt_defaults;
+	lm_conf.Bi = md_calc_size(3, x_patch_dims);
+	lm_conf.iter = iter;
+	lm_conf.cgiter = liniter;
+
 
 	complex float* y_patch = NULL;
 	complex float* x_patch = NULL;
@@ -596,10 +630,19 @@ int main_mobafit(int argc, char* argv[argc])
 			continue;
 		}
 
-		iter4_irgnm2(CAST_UP(&irgnm_conf), nlop,
-				2 * md_calc_size(DIMS, x_patch_dims), (float*)x_patch, NULL,
-				2 * md_calc_size(DIMS, y_patch_dims), (const float*)y_patch, lsqr,
-				(struct iter_op_s){ mobafit_bound, CAST_UP(&bounds) });
+		if (use_lm) {
+
+			iter4_levenberg_marquardt(CAST_UP(&lm_conf), nlop,
+					2 * md_calc_size(DIMS, x_patch_dims), (float*)x_patch, NULL,
+					2 * md_calc_size(DIMS, y_patch_dims), (const float*)y_patch, NULL,
+					(struct iter_op_s){ mobafit_bound, CAST_UP(&bounds) });
+		} else {
+
+			iter4_irgnm2(CAST_UP(&irgnm_conf), nlop,
+					2 * md_calc_size(DIMS, x_patch_dims), (float*)x_patch, NULL,
+					2 * md_calc_size(DIMS, y_patch_dims), (const float*)y_patch, lsqr,
+					(struct iter_op_s){ mobafit_bound, CAST_UP(&bounds) });
+		}
 
 		md_copy_block(DIMS, pos, x_dims, x, x_patch_dims, x_patch, CFL_SIZE);
 

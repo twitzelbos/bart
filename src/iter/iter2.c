@@ -228,7 +228,7 @@ void iter2_conjgrad(const iter_conf* _conf,
 
 		assert(0 == size % (Bo * Bi));
 
-		conjgrad_batch(conf->maxiter, conf->super.alpha * conf->l2lambda, conf->tol, size / (Bo * Bi * 2), Bi, Bo, select_vecops(image_adj),
+		conjgrad_batch(conf->maxiter, conf->super.alpha * conf->l2lambda, NULL, conf->tol, size / (Bo * Bi * 2), Bi, Bo, select_vecops(image_adj),
 			OPERATOR2ITOP(normaleq_op), image, image_adj, monitor);
 	}
 
@@ -269,11 +269,10 @@ void iter2_ist(const iter_conf* _conf,
 	// Let's see whether somebody uses it...
 	assert(!conf->hogwild);
 
-	ist(conf->maxiter, eps * conf->tol, conf->super.alpha * conf->step, size, select_vecops(image_adj),
+	ist(conf->maxiter, eps * conf->tol, conf->super.alpha * conf->step, conf->last, size, select_vecops(image_adj),
 		NULL, OPERATOR2ITOP(normaleq_op), OPERATOR_P2ITOP(prox_ops[0]), image, image_adj, monitor);
 
 cleanup:
-	;
 }
 
 
@@ -366,7 +365,6 @@ void iter2_fista(const iter_conf* _conf,
 		continuation, OPERATOR2ITOP(normaleq_op), OPERATOR_P2ITOP(prox_ops[0]), image, image_adj, monitor);
 
 // cleanup:
-	;
 }
 
 

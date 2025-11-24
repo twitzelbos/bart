@@ -33,6 +33,7 @@
 
 #include "noncart/nufft.h"
 
+#include "num/rand.h"
 #include "sense/recon.h"
 #include "sense/model.h"
 #include "sense/optcom.h"
@@ -55,7 +56,7 @@
 #include "num/vptr.h"
 
 static const char help_str[] = "Parallel-imaging compressed-sensing reconstruction.\n";
-                 
+
 
 static const struct linop_s* sense_nc_init(const long max_dims[DIMS], const long map_dims[DIMS], const complex float* maps, const long ksp_dims[DIMS],
 			const long traj_dims[DIMS], const complex float* traj, struct nufft_conf_s conf,
@@ -73,63 +74,63 @@ static const struct linop_s* sense_nc_init(const long max_dims[DIMS], const long
 
 	for (int i = DIMS - 1; i > MAPS_DIM; i--) {
 
-		if (MD_IS_SET(lowmem_stack, i)) {
+		if (!MD_IS_SET(lowmem_stack, i))
+			continue;
 
-			long n_map_dims[DIMS];
-			long n_max_dims[DIMS];
-			long n_traj_dims[DIMS];
-			long n_ksp_dims[DIMS];
-			long n_wgs_dims[DIMS];
-			long n_basis_dims[DIMS];
+		long n_map_dims[DIMS];
+		long n_max_dims[DIMS];
+		long n_traj_dims[DIMS];
+		long n_ksp_dims[DIMS];
+		long n_wgs_dims[DIMS];
+		long n_basis_dims[DIMS];
 
-			md_select_dims(DIMS, ~MD_BIT(i), n_map_dims, map_dims);
-			md_select_dims(DIMS, ~MD_BIT(i), n_max_dims, max_dims);
-			md_select_dims(DIMS, ~MD_BIT(i), n_traj_dims, traj_dims);
-			md_select_dims(DIMS, ~MD_BIT(i), n_ksp_dims, ksp_dims);
+		md_select_dims(DIMS, ~MD_BIT(i), n_map_dims, map_dims);
+		md_select_dims(DIMS, ~MD_BIT(i), n_max_dims, max_dims);
+		md_select_dims(DIMS, ~MD_BIT(i), n_traj_dims, traj_dims);
+		md_select_dims(DIMS, ~MD_BIT(i), n_ksp_dims, ksp_dims);
 
-			if (NULL != weights)
-				md_select_dims(DIMS, ~MD_BIT(i), n_wgs_dims, wgs_dims);
+		if (NULL != weights)
+			md_select_dims(DIMS, ~MD_BIT(i), n_wgs_dims, wgs_dims);
 
-			if (NULL != basis)
-				md_select_dims(DIMS, ~MD_BIT(i), n_basis_dims, basis_dims);
+		if (NULL != basis)
+			md_select_dims(DIMS, ~MD_BIT(i), n_basis_dims, basis_dims);
 
-			if (DIMS != md_calc_blockdim(DIMS, n_map_dims, MD_STRIDES(DIMS, map_dims, CFL_SIZE), CFL_SIZE))
-				error("Sensitivity maps not continuous for stacking along dim %d.\n");
+		if (DIMS != md_calc_blockdim(DIMS, n_map_dims, MD_STRIDES(DIMS, map_dims, CFL_SIZE), CFL_SIZE))
+			error("Sensitivity maps not continuous for stacking along dim %d.\n");
 
-			if (DIMS != md_calc_blockdim(DIMS, n_traj_dims, MD_STRIDES(DIMS, traj_dims, CFL_SIZE), CFL_SIZE))
-				error("Trajectory not continuous for stacking along dim %d.\n");
+		if (DIMS != md_calc_blockdim(DIMS, n_traj_dims, MD_STRIDES(DIMS, traj_dims, CFL_SIZE), CFL_SIZE))
+			error("Trajectory not continuous for stacking along dim %d.\n");
 
-			if ((NULL != weights) && (DIMS != md_calc_blockdim(DIMS, n_wgs_dims, MD_STRIDES(DIMS, wgs_dims, CFL_SIZE), CFL_SIZE)))
-				error("Weights not continuous for stacking along dim %d.\n");
+		if ((NULL != weights) && (DIMS != md_calc_blockdim(DIMS, n_wgs_dims, MD_STRIDES(DIMS, wgs_dims, CFL_SIZE), CFL_SIZE)))
+			error("Weights not continuous for stacking along dim %d.\n");
 
-			if ((NULL != basis) && (DIMS != md_calc_blockdim(DIMS, n_basis_dims, MD_STRIDES(DIMS, basis_dims, CFL_SIZE), CFL_SIZE)))
-				error("Basis not continuous for stacking along dim %d.\n");
+		if ((NULL != basis) && (DIMS != md_calc_blockdim(DIMS, n_basis_dims, MD_STRIDES(DIMS, basis_dims, CFL_SIZE), CFL_SIZE)))
+			error("Basis not continuous for stacking along dim %d.\n");
 
-			long offset_basis = (NULL != basis) && (1 != basis_dims[i]) ? md_calc_size(i, basis_dims) : 0;
-			long offset_weights = (NULL != weights) && (1 != wgs_dims[i]) ? md_calc_size(i, wgs_dims) : 0;
-			long offset_traj = (1 != traj_dims[i]) ? md_calc_size(i, traj_dims) : 0;
-			long offset_sens = (1 != map_dims[i]) ? md_calc_size(i, map_dims) : 0;
+		long offset_basis = (NULL != basis) && (1 != basis_dims[i]) ? md_calc_size(i, basis_dims) : 0;
+		long offset_weights = (NULL != weights) && (1 != wgs_dims[i]) ? md_calc_size(i, wgs_dims) : 0;
+		long offset_traj = (1 != traj_dims[i]) ? md_calc_size(i, traj_dims) : 0;
+		long offset_sens = (1 != map_dims[i]) ? md_calc_size(i, map_dims) : 0;
 
-			if (conf.nopsf)
-				error("Lowmem stacking not compatible with precomputed psf!\n");
+		if (conf.nopsf)
+			error("Lowmem stacking not compatible with precomputed psf!\n");
 
-			debug_printf(DP_DEBUG1, "Lowmem-stacking along dim %d\n!", i);
+		debug_printf(DP_DEBUG1, "Lowmem-stacking along dim %d\n!", i);
 
-			const struct linop_s* lop = sense_nc_init(n_max_dims, n_map_dims, maps, n_ksp_dims, n_traj_dims, traj, conf, n_wgs_dims, weights, n_basis_dims, basis, NULL, shared_img_dims, lowmem_stack);
+		const struct linop_s* lop = sense_nc_init(n_max_dims, n_map_dims, maps, n_ksp_dims, n_traj_dims, traj, conf, n_wgs_dims, weights, n_basis_dims, basis, NULL, shared_img_dims, lowmem_stack);
 
-			for (int j = 1; j < max_dims[i]; j++) {
+		for (int j = 1; j < max_dims[i]; j++) {
 
-				auto tmp = sense_nc_init(n_max_dims, n_map_dims, maps + j * offset_sens, n_ksp_dims, n_traj_dims,
-										traj + j * offset_traj, conf, n_wgs_dims, weights + j * offset_weights,
-										n_basis_dims, basis + j * offset_basis, NULL, shared_img_dims, lowmem_stack);
-				if (MD_IS_SET(shared_img_dims, i))
-					lop = linop_stack_cod_F(2, MAKE_ARRAY(lop, tmp), i);
-				else
-					lop = linop_stack_FF(i, i, lop, tmp);
-			}
-
-			return lop;
+			auto tmp = sense_nc_init(n_max_dims, n_map_dims, maps + j * offset_sens, n_ksp_dims, n_traj_dims,
+									traj + j * offset_traj, conf, n_wgs_dims, weights + j * offset_weights,
+									n_basis_dims, basis + j * offset_basis, NULL, shared_img_dims, lowmem_stack);
+			if (MD_IS_SET(shared_img_dims, i))
+				lop = linop_stack_cod_F(2, MAKE_ARRAY(lop, tmp), i);
+			else
+				lop = linop_stack_FF(i, i, lop, tmp);
 		}
+
+		return lop;
 	}
 
 	long coilim_dims[DIMS];
@@ -233,9 +234,8 @@ int main_pics(int argc, char* argv[argc])
 	double start_time = timestamp();
 
 	// Read input options
-	struct nufft_conf_s nuconf = nufft_conf_defaults;
-	nuconf.toeplitz = true;
-	nuconf.lowmem = false;
+	nufft_conf_options.toeplitz = true;
+	nufft_conf_options.lowmem = false;
 
 	const char* pat_file = NULL;
 	const char* traj_file = NULL;
@@ -326,20 +326,22 @@ int main_pics(int argc, char* argv[argc])
 		OPT_SET('S', &scale_im, "re-scale the image after reconstruction"),
 		OPT_ULONG('L', &loop_flags, "flags", "(batch-mode)"),
 		OPTL_ULONG(0, "shared-img-dims", &shared_img_flags, "flags", "deselect image dims with flags"),
-		OPT_SET('K', &nuconf.pcycle, "randshift for NUFFT"),
+		OPT_SET('K', &nufft_conf_options.pcycle, "randshift for NUFFT"),
 		OPT_INFILE('B', &basis_file, "file", "temporal (or other) basis"),
 		OPT_FLOAT('P', &bpsense_eps, "eps", "Basis Pursuit formulation, || y- Ax ||_2 <= eps"),
 		OPT_SET('M', &sms, "Simultaneous Multi-Slice reconstruction"),
-		OPTL_SET('U', "lowmem", &nuconf.lowmem, "Use low-mem mode of the nuFFT"),
+		OPTL_SET('U', "lowmem", &nufft_conf_options.lowmem, "Use low-mem mode of the nuFFT"),
 		OPTL_ULONG(0, "lowmem-stack", &lowmem_flags, "flags", "(Stack SENSE model along selected dimscurrently only supports COIL_DIM and noncart)"),
-		OPTL_CLEAR(0, "no-toeplitz", &nuconf.toeplitz, "Turn off Toeplitz mode of nuFFT"),
+		OPTL_CLEAR(0, "no-toeplitz", &nufft_conf_options.toeplitz, "(Turn off Toeplitz mode of nuFFT)"),
 		OPTL_OUTFILE(0, "psf_export", &psf_ofile, "file", "Export PSF to file"),
 		OPTL_INFILE(0, "psf_import", &psf_ifile, "file", "Import PSF from file"),
 		OPTL_STRING(0, "wavelet", &wtype_str, "name", "wavelet type (haar,dau2,cdf44)"),
 		OPTL_ULONG(0, "mpi", &mpi_flags, "flags", "distribute over this dimensions with use of MPI"),
 		OPTL_FLVEC3(0, "fista_pqr", &fista.params, "p:q:r", "parameters for FISTA acceleration"),
-		OPTL_SET(0, "fista_last", &fista.last, "end iteration with call to data consistency"),
+		OPTL_SET(0, "fista_last", &fista.last, "(end iteration with call to data consistency)"),
+		OPTL_SET(0, "ist_last", &fista.last, "end iteration with call to data consistency"),
 		OPTL_INFILE(0, "motion-field", &motion_file, "file", "motion field"),
+		OPTL_SUBOPT(0, "nufft-conf", "...", "configure nufft", N_nufft_conf_opts, nufft_conf_opts),
 	};
 
 
@@ -367,6 +369,8 @@ int main_pics(int argc, char* argv[argc])
 
 	admm.dynamic_tau = admm.relative_norm;
 
+	struct nufft_conf_s nuconf = nufft_conf_options;
+
 	if (conf.bpsense)
 		nuconf.toeplitz = false;
 
@@ -387,20 +391,22 @@ int main_pics(int argc, char* argv[argc])
 	long ksp_dims[DIMS];
 	long traj_dims[DIMS];
 
+	memset(traj_dims, 0, sizeof traj_dims);	// GCC ANALYZER
+
 
 	// load kspace and maps and get dimensions
 
 	complex float* kspace = load_cfl(ksp_file, DIMS, ksp_dims);
 
-        if (sms) {
+	if (sms) {
 
 		if (NULL == traj_file)
 			error("SMS is only supported for non-Cartesian trajectories.\n");
 
 		nuconf.cfft |= SLICE_FLAG;
 
-                debug_printf(DP_INFO, "SMS reconstruction: MB = %ld\n", ksp_dims[SLICE_DIM]);
-        }
+		debug_printf(DP_INFO, "SMS reconstruction: MB = %ld\n", ksp_dims[SLICE_DIM]);
+	}
 
 	if (ropts.asl && ropts.teasl)
 		error("Use either TE-ASL or ASL reconstruction.\n");
@@ -499,6 +505,8 @@ int main_pics(int argc, char* argv[argc])
 
 
 	assert(1 == ksp_dims[MAPS_DIM]);
+
+	num_rand_init(0ULL);
 
 	num_init_gpu_support();
 	conf.gpu = bart_use_gpu;
@@ -714,7 +722,7 @@ int main_pics(int argc, char* argv[argc])
 
 		if (NULL == traj_file) {
 
-			scaling = estimate_scaling(ksp_dims, NULL, kspace_p);
+			scaling = estimate_scaling(ksp_dims, NULL, kspace_p, -1);
 
 		} else {
 
@@ -722,7 +730,7 @@ int main_pics(int argc, char* argv[argc])
 
 			linop_adjoint(forward_op, DIMS, img_dims, adj, DIMS, ksp_dims, kspace_p);
 
-			scaling = estimate_scaling_norm(1., md_calc_size(DIMS, img_dims), adj, false);
+			scaling = estimate_scaling_norm(1., md_calc_size(DIMS, img_dims), adj, false, -1);
 
 			md_free(adj);
 		}
@@ -737,6 +745,7 @@ int main_pics(int argc, char* argv[argc])
 	} else {
 
 		debug_printf(DP_DEBUG1, "Inverse scaling of the data: %f\n", scaling);
+
 		md_zsmul(DIMS, ksp_dims, kspace_p, kspace_p, 1. / scaling);
 
 		if (conf.bpsense) {
@@ -744,6 +753,7 @@ int main_pics(int argc, char* argv[argc])
 			bpsense_eps /= scaling;
 			debug_printf(DP_DEBUG1, "scaling basis pursuit eps: %.3e\n", bpsense_eps);
 		}
+
 		pridu.sigma_tau_ratio = scaling;
 	}
 
@@ -754,6 +764,7 @@ int main_pics(int argc, char* argv[argc])
 	}
 
 	complex float* image = create_cfl(out_file, DIMS, img_dims);
+
 	md_clear(DIMS, img_dims, image, CFL_SIZE);
 
 
@@ -817,7 +828,7 @@ int main_pics(int argc, char* argv[argc])
 
 	if (conf.bpsense)
 		opt_bpursuit_configure(&ropts, thresh_ops, trafos, forward_op, kspace_p, bpsense_eps);
-	
+
 	if (conf.precond)
 		opt_precond_configure(&ropts, thresh_ops, trafos, forward_op, DIMS, ksp_dims, kspace_p, pat_dims, conf.precond ? pattern : NULL);
 
@@ -859,7 +870,7 @@ int main_pics(int argc, char* argv[argc])
 
 	// initialize algorithm
 	pridu.maxeigen_iter = eigen ? 30 : 0;
-	
+
 	struct iter it = italgo_config(algo, nr_penalties, ropts.regs, maxiter, step, hogwild, admm, fista, pridu, NULL != image_truth);
 
 	if (ALGO_CG == algo)
@@ -927,19 +938,14 @@ int main_pics(int argc, char* argv[argc])
 		md_free(pattern);
 
 	unmap_cfl(DIMS, img_dims, image);
-
-	if (NULL != image_truth) {
+	unmap_cfl(DIMS, img_dims, image_start);
 
 #ifdef USE_CUDA
-		if (conf.gpu)
-			md_free(image_truth);
-		else
+	if (conf.gpu)
+		md_free(image_truth);
+	else
 #endif
-			unmap_cfl(DIMS, img_dims, image_truth);
-	}
-
-	if (image_start)
-		unmap_cfl(DIMS, img_dims, image_start);
+		unmap_cfl(DIMS, img_dims, image_truth);
 
 	if (kspace_p != kspace)
 		md_free(kspace_p);
@@ -952,9 +958,7 @@ int main_pics(int argc, char* argv[argc])
 
 	unmap_cfl(DIMS, map_dims, maps);
 	unmap_cfl(DIMS, ksp_dims, kspace);
-
-	if (NULL != traj)
-		unmap_cfl(DIMS, traj_dims, traj);
+	unmap_cfl(DIMS, traj_dims, traj);
 
 	double end_time = timestamp();
 
@@ -962,3 +966,4 @@ int main_pics(int argc, char* argv[argc])
 
 	return 0;
 }
+

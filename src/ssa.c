@@ -15,6 +15,7 @@
 #include "misc/mri.h"
 #include "misc/debug.h"
 #include "misc/opts.h"
+#include "misc/version.h"
 
 #include "num/multind.h"
 #include "num/init.h"
@@ -53,11 +54,11 @@ int main_ssa(int argc, char* argv[argc])
 
 	const struct opt_s opts[] = {
 
-		OPT_INT('w', &window, "window", "Window length"),
+		OPT_PINT('w', &window, "window", "Window length"),
 		OPT_CLEAR('z', &zeropad, "Zeropadding [Default: True]"),
-		OPT_INT('m', &rm_mean, "0/1", "Remove mean [Default: True]"),
-		OPT_INT('n', &normalize, "0/1", "Normalize [Default: False]"),
-		OPT_INT('r', &rank, "rank", "Rank for backprojection. r < 0: Throw away first r components. r > 0: Use only first r components."),
+		OPT_PINT('m', &rm_mean, "0/1", "Remove mean [Default: True]"),
+		OPT_PINT('n', &normalize, "0/1", "Normalize [Default: False]"),
+		OPT_PINT('r', &rank, "rank", "Rank for backprojection. r < 0: Throw away first r components. r > 0: Use only first r components."),
 		OPT_LONG('g', &group, "bitmask", "Bitmask for Grouping (long value!)"),
 	};
 
@@ -153,6 +154,10 @@ int main_ssa(int argc, char* argv[argc])
 
 	bool econ = A_dims[0] > A_dims[1];
 
+	// exact reprod. of SSA-FARY paper
+	if (use_compat_to_version("v0.9.00"))
+		econ = false;
+
 	long U_dims[2] = { N, econ ? MIN(A_dims[1], N) : N };
 	complex float* U = create_cfl(EOF_file, 2, U_dims);
 
@@ -186,9 +191,7 @@ int main_ssa(int argc, char* argv[argc])
 
 	xfree(S_square);
 
-	if (NULL != backproj_file)
-		unmap_cfl(DIMS, back_dims, back);
-
+	unmap_cfl(DIMS, back_dims, back);
 	unmap_cfl(2, U_dims, U);
 	unmap_cfl(DIMS, in_dims, in);
 
@@ -196,5 +199,4 @@ int main_ssa(int argc, char* argv[argc])
 
 	return 0;
 }
-
 

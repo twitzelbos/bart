@@ -406,6 +406,12 @@ static void zatanr(long N, complex float* dst, const complex float* src)
 		dst[i] = atan(crealf(src[i])) + 0.I;
 }
 
+static void zatan2r(long N, complex float* dst, const complex float* src1, const complex float* src2)
+{
+	for (long i = 0; i < N; i++)
+		dst[i] = atan2f(crealf(src1[i]), crealf(src2[i])) + 0.I;
+}
+
 static void zsin(long N, complex float* dst, const complex float* src)
 {
 	for (long i = 0; i < N; i++)
@@ -869,6 +875,7 @@ const struct vec_ops cpu_ops = {
 	.zarg = zarg,
 	.zabs = zabs,
 	.zatanr = zatanr,
+	.zatan2r = zatan2r,
 
 	.zsin = zsin,
 	.zcos = zcos,
@@ -947,6 +954,7 @@ struct vec_iter_s {
 	void (*zsmax)(long N, float val, complex float* dst, const complex float* src1);
 
 	void (*rand)(long N, float* dst);
+	void (*uniform)(long N, float* dst);
 
 	void (*xpay_bat)(long Bi, long N, long Bo, const float* beta, float* a, const float* x);
 	void (*dot_bat)(long Bi, long N, long Bo, float* dst, const float* src1, const float* src2);
@@ -981,6 +989,7 @@ const struct vec_iter_s cpu_iter_ops = {
 	.smax = smax,
 	.smin = smin,
 	.rand = gaussian_rand_vec,
+	.uniform = uniform_rand_vec,
 	.le = vec_le,
 
 	.xpay_bat = xpay_bat,

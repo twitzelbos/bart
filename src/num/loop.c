@@ -65,6 +65,43 @@ void md_parallel_zsample(int N, const long dims[N], complex float* out, zsample_
 	md_zsample2(N, dims, ~0U, out, fun);
 }
 
+static void md_zzsample2(int N, const long dims[N], unsigned long flags, complex double* out, zzsample_fun_t fun)
+{
+#ifdef USE_CUDA
+	if (cuda_ondevice(out)) {
+
+		complex double *out2 = md_alloc(N, dims, sizeof *out2);
+
+		md_zzsample2(N, dims, flags, out2, fun);
+		md_copy(N, dims, out, out2, sizeof *out2);
+
+		md_free(out2);
+		return;
+	}
+#endif
+
+	long strs[N];
+	md_calc_strides(N, strs, dims, 1);	// we use size = 1 here
+
+	long* strsp = strs;	// because of clang
+
+	NESTED(void, sample_kernel, (const long pos[]))
+	{
+		out[md_calc_offset(N, strsp, pos)] = fun(pos);
+	};
+
+	md_parallel_loop(N, dims, flags, sample_kernel);
+}
+
+void md_zzsample(int N, const long dims[N], complex double* out, zzsample_fun_t fun)
+{
+	md_zzsample2(N, dims, 0U, out, fun);
+}
+
+void md_parallel_zzsample(int N, const long dims[N], complex double* out, zzsample_fun_t fun)
+{
+	md_zzsample2(N, dims, ~0U, out, fun);
+}
 
 static void md_sample2(int N, const long dims[N], unsigned long flags, float* out, sample_fun_t fun)
 {
@@ -110,20 +147,34 @@ void md_zmap(int N, const long dims[N], complex float* out, const complex float*
 
 void md_zgradient(int N, const long dims[N], complex float* out, const complex float grad[N])
 {
+	long ndims[N];
+	complex float ngrad[N];
+	int nN = 0;
+
+	for (int i = 0; i < N; i++) {
+
+		if (1 != dims[i]) {
+
+			ndims[nN] = dims[i];
+			ngrad[nN] = grad[i];
+			nN++;
+		}
+	}
+
 	// clang
-	const complex float* grad2 = grad;
+	const complex float* grad2 = ngrad;
 
 	NESTED(complex float, gradient_kernel, (const long pos[]))
 	{
 		complex float val = 0.;
 
-		for (int i = 0; i < N; i++)
+		for (int i = 0; i < nN; i++)
 			val += pos[i] * grad2[i];
 
 		return val;
 	};
 
-	md_parallel_zsample(N, dims, out, gradient_kernel);
+	md_parallel_zsample(nN, ndims, out, gradient_kernel);
 }
 
 

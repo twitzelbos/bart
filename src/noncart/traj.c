@@ -12,6 +12,8 @@
 #include <math.h>
 #include <assert.h>
 
+#include "num/multind.h"
+
 #include "misc/mri.h"
 #include "misc/misc.h"
 #include "misc/version.h"
@@ -34,22 +36,33 @@ const struct traj_conf traj_defaults = {
 	.transverse = false,
 	.asym_traj = false,
 	.mems_traj = false,
+	.mems_legacy = false,
 	.accel = 1,
 	.tiny_gold = 0,
 	.rational = false,
 	.double_base = false,
 	.turns = 1,
 	.mb = 1,
+	.Y = 1,
+	.raga_inc = 1,
+	.aligned_flags = 0,
 };
 
 
-void euler(float dir[3], float phi, float psi)
+static void euler(float dir[3], float phi, float psi)
 {
 	dir[0] = cosf(phi) * cosf(psi);
 	dir[1] = sinf(phi) * cosf(psi);
 	dir[2] =             sinf(psi);
 }
 
+
+void traj_read_dir(float dir[3], float phi, float psi)
+{
+	euler(dir, phi, psi);
+
+	SWAP(dir[0], dir[1]);
+}
 
 /* We allow an arbitrary quadratic form to account for
  * non-physical coordinate systems.
@@ -67,13 +80,15 @@ void gradient_delay(float d[3], float coeff[2][3], float phi, float psi)
 		{ coeff[1][1], coeff[1][2], coeff[1][0] },
 	};
 
-	for (unsigned int i = 0; i < 3; i++) {
+	for (int i = 0; i < 3; i++) {
 
 		d[i] = 0.;
 
-		for (unsigned int j = 0; j < 3; j++)
+		for (int j = 0; j < 3; j++)
 			d[i] += mat[i][j] * dir[j];
 	}
+
+	SWAP(d[0], d[1]);
 }
 
 int recover_gen_fib_ind(int Y, int inc)
@@ -108,7 +123,7 @@ int gen_fibonacci(int n, int ind)
 	return (0 == ind) ? fib[0] : fib[1];
 }
 
-static int raga_find_index(int Y, int n)
+int raga_find_index(int Y, int n)
 {
 	int i = 0;
 
@@ -125,15 +140,17 @@ int raga_increment(int Y, int n)
 	return gen_fibonacci(1, i - 1);
 }
 
-static float rational_angle(int Y, int n)
+int raga_spokes(int baseresolution, int tiny_ga)
 {
-	int inc = raga_increment(Y, n);
+	int i = raga_find_index((M_PI / 2.) * baseresolution, tiny_ga);
 
-	return M_PI / (float)Y * (float)inc;
+	while (0 == gen_fibonacci(tiny_ga, i) % 2)
+		i--;
+
+	return gen_fibonacci(tiny_ga, i);
 }
 
-
-void calc_base_angles(double base_angle[DIMS], int Y, int E, struct traj_conf conf)
+static double calc_golden_angle(int tiny_gold)
 {
 	/*
 	 * Winkelmann S, Schaeffter T, Koehler T, Eggers H, Doessel O.
@@ -150,10 +167,10 @@ void calc_base_angles(double base_angle[DIMS], int Y, int E, struct traj_conf co
 	if (use_compat_to_version("v0.5.00"))
 		golden_ratio = (sqrtf(5.) + 1.) / 2;
 
-	double golden_angle = M_PI / (golden_ratio + conf.tiny_gold - 1.);
+	double golden_angle = M_PI / (golden_ratio + tiny_gold - 1.);
 
 	// For numerical stability
-	if (1 == conf.tiny_gold) {
+	if (1 == tiny_gold) {
 
 		golden_angle = M_PI * (2. - (3. - sqrt(5.))) / 2.;
 
@@ -161,44 +178,59 @@ void calc_base_angles(double base_angle[DIMS], int Y, int E, struct traj_conf co
 			golden_angle = M_PI * (2. - (3. - sqrtf(5.))) / 2.;
 	}
 
-	if (conf.rational)
-		golden_angle = rational_angle(Y / (conf.double_base ? 1 : 2), conf.tiny_gold);
+	return golden_angle;
+}
 
-	golden_angle = golden_angle * (conf.double_base ? 2. : 1.);
+double calc_angle_atom(const struct traj_conf* conf)
+{
+	assert(conf->rational);
+	return 2. * M_PI / (double)conf->Y;
+}
+
+void calc_base_angles(double base_angle[DIMS], int Y, int E, struct traj_conf conf)
+{
+	assert(!conf.rational);
 
 	double angle_atom = M_PI / Y;
+	double golden_angle = calc_golden_angle(conf.tiny_gold);
 
-	// Angle between spokes of one slice/partition
-	double angle_s = angle_atom * (conf.full_circle ? 2 : 1);
 
-	// Angle between slices/partitions
-	double angle_m = angle_atom / conf.mb; // linear-turned partitions
+	if (conf.double_base)
+		golden_angle *= 2.;
 
-	if (conf.aligned)
-		angle_m = 0;
-
-	// Angle between turns
-	double angle_t = 0.;
-
-	if (conf.turns > 1)
-		angle_t = angle_atom / conf.turns * (conf.full_circle ? 2 : 1);
-
-	/* radial multi-echo multi-spoke sampling
-	 *
-	 * Tan Z, Voit D, Kollmeier JM, Uecker M, Frahm J.
-	 * Dynamic water/fat separation and B0 inhomogeneity mapping -- joint
-	 * estimation using undersampled  triple-echo multi-spoke radial FLASH.
-	 * Magn Reson Med 82:1000-1011 (2019)
-	 */
+	double angle_s = 0.;
+	double angle_m = 0.; // slices/partitions
+	double angle_t = 0.; // turns
 	double angle_e = 0.;
 
-	if (conf.mems_traj) {
+	if (!conf.golden || conf.mems_traj) {
 
-		angle_s = angle_s * 1.;
-		angle_e = angle_s / E;
-		angle_t = golden_angle;
+		// Angle between spokes of one slice/partition
+		angle_s = angle_atom * (conf.full_circle ? 2 : 1);
 
-	} else if (conf.golden) {
+		if (!conf.aligned)
+			angle_m = angle_atom / conf.mb; // linear-turned partitions
+
+		if (conf.turns > 1)
+			angle_t = angle_atom / conf.turns * (conf.full_circle ? 2 : 1);
+
+		if (conf.mems_traj) {
+
+			/* radial multi-echo multi-spoke sampling
+			 *
+			 * Tan Z, Voit D, Kollmeier JM, Uecker M, Frahm J.
+			 * Dynamic water/fat separation and B0 inhomogeneity mapping -- joint
+			 * estimation using undersampled  triple-echo multi-spoke radial FLASH.
+			 * Magn Reson Med 82:1000-1011 (2019)
+			 */
+
+			angle_e = angle_s / E + M_PI;
+			if (conf.mems_legacy)
+				angle_e = angle_s / E;
+			angle_t = golden_angle;
+		}
+
+	} else {
 
 		if (conf.aligned) {
 
@@ -208,6 +240,12 @@ void calc_base_angles(double base_angle[DIMS], int Y, int E, struct traj_conf co
 
 		} else {
 
+#if 0			
+			// FIXME 
+			// fix tests/test-traj-rational-approx-multislice; mrirecon/sms-t1-mapping)
+			angle_s = golden_angle * conf.mb;
+			angle_m = golden_angle;
+#endif
 			angle_s = golden_angle;
 			angle_m = golden_angle * Y;
 			angle_t = golden_angle * Y * conf.mb;
@@ -225,23 +263,23 @@ void calc_base_angles(double base_angle[DIMS], int Y, int E, struct traj_conf co
 
 			int mb_red = 8;
 
-			angle_m = golden_angle;
 			angle_s = golden_angle * mb_red;
+			angle_m = golden_angle;
 			angle_t = golden_angle * Y * mb_red;
 
 			debug_printf(DP_INFO, "Trajectory generation to reproduce SSA-FARY Paper!\n");
 		}
 #endif
-		if (use_compat_to_version("v0.4.00")) {
+		if (use_compat_to_version("v0.4.00") && conf.full_circle) {
 
 			// since the traj rewrite (commit d4e6e2e3a2313) we do not apply
 			// full circle to golden angle anymore. However, this is needed for
 			// reproducing the RING paper
-			angle_s *= (conf.full_circle ? 2. : 1.);
-			angle_m *= (conf.full_circle ? 2. : 1.);
-			angle_t *= (conf.full_circle ? 2. : 1.);
-		}
 
+			angle_s *= 2.;
+			angle_m *= 2.;
+			angle_t *= 2.;
+		}
 	}
 
 	base_angle[PHS2_DIM] = angle_s;
@@ -251,22 +289,41 @@ void calc_base_angles(double base_angle[DIMS], int Y, int E, struct traj_conf co
 }
 
 
-
-void indices_from_position(long ind[DIMS], const long pos[DIMS], struct traj_conf conf, long start_pos_GA)
+long raga_increment_from_pos(const int order[DIMS], const long pos[DIMS], unsigned long flags, const long dims[DIMS], const struct traj_conf* conf)
 {
+	assert(conf->rational);
+
+	unsigned long outer_loops = 0;
+
+	bool outer = false;
+	for (int d = 0; d < DIMS; d++) {
+
+		if (outer)
+			outer_loops |= (1UL << order[d]);
+
+		if (TIME_DIM == order[d])
+			outer = true;
+	}
+
+	long idx_inner = md_ravel_index_permuted(DIMS, pos, flags & ~(conf->aligned_flags | outer_loops), dims, order);
+	long idx_outer = md_ravel_index_permuted(DIMS, pos, flags & ~conf->aligned_flags & outer_loops, dims, order);
+
+	return conf->raga_inc * (idx_inner + idx_outer) % conf->Y;
+}
+
+
+
+void indices_from_position(long ind[DIMS], const long pos[DIMS], struct traj_conf conf)
+{
+	assert(!conf.rational);
+
 	ind[PHS2_DIM] = pos[PHS2_DIM];
 	ind[SLICE_DIM] = pos[SLICE_DIM];
 	ind[TE_DIM] = pos[TE_DIM];
 	ind[TIME_DIM] = pos[TIME_DIM];
 
-	if (conf.rational)
-		return;
-
 	if (conf.turns > 1)
 		ind[TIME_DIM] = pos[TIME_DIM] % conf.turns;
-
-	if (conf.golden && conf.aligned)
-		ind[TIME_DIM] = start_pos_GA + pos[TIME_DIM];
 }
 
 

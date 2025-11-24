@@ -3,6 +3,8 @@
 
 struct network_data_s {
 
+	struct config_nlop_mri_s* conf;
+
 	int N;
 	int ND;
 
@@ -45,6 +47,7 @@ struct network_data_s {
 	_Bool create_out;
 	_Bool load_mem;
 	_Bool gpu;
+	_Bool precomp;
 
 	unsigned long batch_flags;
 };

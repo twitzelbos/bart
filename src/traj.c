@@ -26,8 +26,30 @@
 #include "misc/mri.h"
 #include "misc/opts.h"
 #include "misc/debug.h"
+#include "misc/version.h"
 
 #include "noncart/traj.h"
+
+static const int traj_loop_order[DIMS] = {
+
+	SLICE_DIM,
+	COEFF2_DIM,
+	COEFF_DIM,
+	PHS2_DIM,
+	PHS1_DIM,
+	AVG_DIM,
+	TIME2_DIM,
+	TIME_DIM,
+	BATCH_DIM,
+
+	READ_DIM,
+	COIL_DIM,
+	MAPS_DIM,
+	TE_DIM,
+	ITER_DIM,
+	CSHIFT_DIM,
+	LEVEL_DIM
+};
 
 static const char help_str[] = "Computes k-space trajectories.";
 
@@ -61,18 +83,17 @@ int main_traj(int argc, char* argv[argc])
 
 	const char* custom_angle_file = NULL;
 	const char* gdelays_file = NULL;
-	const char* raga_index_file = NULL;
 
 	const struct opt_s opts[] = {
 
-		OPT_INT('x', &X, "x", "readout samples"),
-		OPT_INT('y', &Y, "y", "phase encoding lines"),
-		OPT_INT('z', &Z, "z", "second phase encoding lines"),
-		OPT_INT('d', &D, "d", "full readout samples"),
-		OPT_INT('e', &E, "e", "number of echoes"),
-		OPT_INT('a', &conf.accel, "a", "acceleration"),
-		OPT_INT('t', &conf.turns, "t", "conf.turns"),
-		OPT_INT('m', &conf.mb, "mb", "SMS multiband factor"),
+		OPT_PINT('x', &X, "x", "readout samples"),
+		OPT_PINT('y', &Y, "y", "phase encoding lines"),
+		OPT_PINT('z', &Z, "z", "second phase encoding lines"),
+		OPT_PINT('d', &D, "d", "full readout samples"),
+		OPT_PINT('e', &E, "e", "number of echoes"),
+		OPT_PINT('a', &conf.accel, "a", "acceleration"),
+		OPT_PINT('t', &conf.turns, "t", "conf.turns"),
+		OPT_PINT('m', &conf.mb, "mb", "SMS multiband factor"),
 		OPT_SET('l', &conf.aligned, "aligned partition angle"),
 		OPT_SET('g', &conf.golden_partition, "(golden angle in partition direction)"),
 		OPT_SET('r', &conf.radial, "radial"),
@@ -84,17 +105,17 @@ int main_traj(int argc, char* argv[argc])
 		OPTL_SET(0, "double-base", &conf.double_base, "define GA over 2Pi base instead of default Pi."),
 		OPT_FLOAT('o', &over, "o", "oversampling factor"),
 		OPT_FLOAT('R', &rot, "phi", "rotate [°]"),
-		OPT_FLVEC3('q', &gdelays[0], "delays", "gradient delays: x, y, xy"),
-		OPT_FLVEC3('Q', &gdelays[1], "delays", "(gradient delays: z, xz, yz)"),
+		OPT_FLVEC3('q', &gdelays[0], "delays", "gradient delays: y, x, yx"),
+		OPT_FLVEC3('Q', &gdelays[1], "delays", "(gradient delays: z, yz, xz)"),
 		OPT_SET('O', &conf.transverse, "correct transverse gradient error for radial tajectories"),
 		OPT_SET('3', &conf.d3d, "3D"),
 		OPT_SET('c', &conf.asym_traj, "asymmetric trajectory [DC sampled]"),
 		OPT_SET('E', &conf.mems_traj, "multi-echo multi-spoke trajectory"),
+		OPTL_SET(0, "mems-legacy", &conf.mems_legacy, "OLD multi-echo multi-spoke trajectory"),
 		OPTL_VEC2(0, "z-us", &z_usamp, "accel", "(undersampling in z-direction.)"),
 		OPT_INFILE('C', &custom_angle_file, "file", "custom_angle file [phi + i * psi]"),
 		OPT_INFILE('V', &gdelays_file, "file", "(custom_gdelays)"),
-		OPTL_INT(0, "raga-inc", &raga_inc, "d", "increment of RAGA Sampling"),
-		OPTL_OUTFILE(0, "raga-index-file", &raga_index_file, "file", "output file with indices of RAGA trajectory."),
+		OPTL_PINT(0, "raga-inc", &raga_inc, "d", "increment of RAGA Sampling"),
 	};
 
 	cmdline(&argc, argv, ARRAY_SIZE(args), args, help_str, ARRAY_SIZE(opts), opts);
@@ -124,6 +145,8 @@ int main_traj(int argc, char* argv[argc])
 	if (-1 == Y)
 		Y = 128;
 
+	conf.Y = Y;
+
 	if (conf.rational) {
 
 		conf.golden = true;
@@ -143,6 +166,10 @@ int main_traj(int argc, char* argv[argc])
 			assert(conf.tiny_gold == recover_gen_fib_ind(Y / (conf.double_base ? 1 : 2), raga_inc));
 
 		debug_printf(DP_INFO, "Golden Ratio Index is set to:\t%d\n", conf.tiny_gold);
+
+		conf.raga_inc = raga_increment(Y / (conf.double_base ? 1 : 2), conf.tiny_gold);
+
+		assert((0 == raga_inc) || (conf.raga_inc == raga_inc));
 	}
 
 	if (-1 == X)
@@ -228,7 +255,7 @@ int main_traj(int argc, char* argv[argc])
 
 	} else { // Cartesian
 
-		if (((conf.turns != 1) || (conf.mb != 1)) && (!raga_index_file))
+		if (((conf.turns != 1) || (conf.mb != 1)))
 			error("Turns or partitions not allowed/implemented for Cartesian trajectories!\n");
 	}
 
@@ -259,7 +286,8 @@ int main_traj(int argc, char* argv[argc])
 	md_clear(DIMS, dims, samples, CFL_SIZE);
 
 	double base_angle[DIMS] = { 0. };
-	calc_base_angles(base_angle, Y, E, conf);
+	if (!conf.rational)
+		calc_base_angles(base_angle, Y, E, conf);
 
 	int p = 0;
 	long pos[DIMS] = { };
@@ -280,28 +308,56 @@ int main_traj(int argc, char* argv[argc])
 			 */
 			int sample = i + D - X;
 
-			if (conf.mems_traj && (1 == e % 2))
-			       sample =	D - i;
+			// for MEMS, we sample the beginning of each odd echo (legacy) or add M_PI to base angle of echo
+			if (conf.mems_traj && (1 == e % 2)) {
+
+				if (conf.mems_legacy)
+					sample = D - i;
+				else
+					sample = i;
+			}
 
 			double read = (float)sample + (conf.asym_traj ? 0 : 0.5) - (float)D / 2.;
 
-			// Used, for example, in the SMS-NLINV paper
-			if (conf.golden_partition) {
-
-				double golden_ratio = (sqrtf(5.) + 1.) / 2;
-				double angle_atom = M_PI / Y;
-
-				base_angle[SLICE_DIM] = (m > 0) ? (fmod(angle_atom * m / golden_ratio, angle_atom) / m) : 0;
-			}
-
 			double angle = 0.;
 
-			long ind[DIMS] = { 0L };
-			indices_from_position(ind, pos, conf, 0);
+			if (conf.rational) {
 
-			for (int d = 1; d < DIMS; d++)
-				angle += (double)ind[d] * base_angle[d];
+				conf.aligned_flags |= TIME_FLAG;
 
+				if (conf.aligned)
+					conf.aligned_flags |= SLICE_FLAG;
+
+				if (!use_compat_to_version("v0.9.00")) {
+
+					double atom = calc_angle_atom(&conf);
+					long inc = raga_increment_from_pos(traj_loop_order, pos, ~3UL, dims, &conf);
+
+					angle = atom * inc;
+
+				} else {
+
+					float atom = calc_angle_atom(&conf) * conf.raga_inc;
+					angle = atom * pos[2];
+				}
+
+			} else {
+
+				// Used, for example, in the SMS-NLINV paper
+				if (conf.golden_partition) {
+
+					double golden_ratio = (sqrtf(5.) + 1.) / 2;
+					double angle_atom = M_PI / Y;
+
+					base_angle[SLICE_DIM] = (m > 0) ? (fmod(angle_atom * m / golden_ratio, angle_atom) / m) : 0;
+				}
+
+				long ind[DIMS] = { 0L };
+				indices_from_position(ind, pos, conf);
+
+				for (int d = 1; d < DIMS; d++)
+					angle += (double)ind[d] * base_angle[d];
+			}
 
 			if (conf.half_circle_gold)
 				angle = fmod(angle, M_PI);
@@ -363,7 +419,7 @@ int main_traj(int argc, char* argv[argc])
 			gradient_delay(d, gdelays, angle, angle2);
 
 			float read_dir[3];
-			euler(read_dir, angle, angle2);
+			traj_read_dir(read_dir, angle, angle2);
 
 			if (!conf.transverse) {
 
@@ -378,8 +434,8 @@ int main_traj(int argc, char* argv[argc])
 					d[i] = delay * read_dir[i];
 			}
 
-			samples[p * 3 + 0] = (d[1] + read * read_dir[1]) / over;
-			samples[p * 3 + 1] = (d[0] + read * read_dir[0]) / over;
+			samples[p * 3 + 0] = (d[0] + read * read_dir[0]) / over;
+			samples[p * 3 + 1] = (d[1] + read * read_dir[1]) / over;
 			samples[p * 3 + 2] = (d[2] + read * read_dir[2]) / over;
 
 		} else {
@@ -400,46 +456,10 @@ int main_traj(int argc, char* argv[argc])
 
 	assert(p == N - 0);
 
-	// Generate file including RAGA indices for given tiny_golden and spokes
-	if (NULL != raga_index_file) {
-
-		assert(0 != conf.tiny_gold);
-
-		N /= X;
-
-		long dims2[DIMS] = { [0 ... DIMS - 1] = 1  };
-		md_select_dims(DIMS, ~(READ_FLAG|PHS1_FLAG), dims2, dims);
-
-		complex float* indices = create_cfl(raga_index_file, DIMS, dims2);
-		md_clear(DIMS, dims2, indices, CFL_SIZE);
-
-		p = 0;
-		md_set_dims(DIMS, pos, 0);
-
-		do {
-			int j = pos[PHS2_DIM];
-
-			indices[p] = (j * raga_increment(Y  / (conf.double_base ? 1 : 2), conf.tiny_gold)) % Y;
-
-			p++;
-
-		} while (md_next(DIMS, dims2, ~1UL, pos));
-
-		assert(p == N - 0);
-
-		unmap_cfl(DIMS, dims2, indices);
-	}
-
-	if (NULL != gdelays2)
-		unmap_cfl(DIMS, gdims, gdelays2);
-
-	if (NULL != custom_angle_vals)
-		unmap_cfl(DIMS, sdims, custom_angle_vals);
-
+	unmap_cfl(DIMS, gdims, gdelays2);
+	unmap_cfl(DIMS, sdims, custom_angle_vals);
 	unmap_cfl(DIMS, dims, samples);
 
 	return 0;
 }
-
-
 

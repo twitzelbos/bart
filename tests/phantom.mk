@@ -119,6 +119,16 @@ tests/test-phantom-random-tubes: nrmse phantom fmac
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
+
+tests/test-phantom-random-tubes1: nrmse phantom fmac
+	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)						;\
+	$(TOOLDIR)/phantom -N 1 -k k0.ra							;\
+	$(TOOLDIR)/phantom -N 1 -b -k k1.ra							;\
+	$(TOOLDIR)/fmac -s 64 k1.ra k2.ra							;\
+	$(TOOLDIR)/nrmse -t 0. k0.ra k2.ra							;\
+	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
+
+
 tests/test-phantom-NIST: fft nrmse phantom
 	set -e; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)						;\
 	$(TOOLDIR)/phantom --NIST -k k.ra							;\
@@ -391,8 +401,9 @@ TESTS += tests/test-phantom-rotation-tubes-multistep tests/test-phantom-rotation
 TESTS += tests/test-phantom-rotation-NIST-multistep tests/test-phantom-rotation-NIST-kspace-multistep tests/test-phantom-rotation-NIST-basis-multistep
 TESTS += tests/test-phantom-SONAR tests/test-phantom-SONAR-basis tests/test-phantom-rotation-SONAR tests/test-phantom-rotation-SONAR-multistep
 TESTS += tests/test-phantom-brain tests/test-phantom-BRAIN-basis
-TESTS_SLOW += tests/test-phantom-coil-large tests/test-phantom-ksp-coil-large
 TESTS += tests/test-phantom-FILE tests/test-phantom-FILE-basis
-TESTS_SLOW += tests/test-phantom-noncart-BRAIN tests/test-phantom-FILE-coil-large
 TESTS += tests/test-phantom-ellipsoid tests/test-phantom-noncart-ellipsoid tests/test-phantom-noncart-ellipsoid-params
+
+TESTS_SLOW += tests/test-phantom-coil-large tests/test-phantom-ksp-coil-large
+TESTS_SLOW += tests/test-phantom-noncart-BRAIN tests/test-phantom-FILE-coil-large
 

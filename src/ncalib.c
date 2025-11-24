@@ -22,6 +22,7 @@
 #include "num/flpmath.h"
 #include "num/fft.h"
 #include "num/init.h"
+#include "num/rand.h"
 
 #include "noncart/nufft.h"
 #include "linops/linop.h"
@@ -102,18 +103,20 @@ int main_ncalib(int argc, char* argv[argc])
 		OPT_SET('o', &conf.ret_os_coils, "return oversampled coils"),
 
 		OPT_SET('N', &normalize, "Normalize coil sensitivities"),
-		OPT_INT('m', &maps, "nmaps", "Number of ENLIVE maps to use in reconstruction"),
+		OPT_PINT('m', &maps, "nmaps", "Number of ENLIVE maps to use in reconstruction"),
 		OPTL_VEC3('x', "dims", &my_sens_dims, "x:y:z", "Explicitly specify sens dimensions"),
 		OPTL_FLOAT(0, "sens-os", &(oversampling_coils), "val", "(over-sampling factor for sensitivities)"),
 		OPTL_ULONG(0, "shared-img-dims", &shared_img_flags, "flags", "deselect image dims with flags"),
 		OPTL_ULONG(0, "shared-col-dims", &cnstcoil_flags, "flags", "deselect coil dims with flags"),
 		OPTL_ULONG(0, "scale-loop-dims", &scale_loop_flags, "flags", "scale parameters as if ncalib was looped over these dims"),
+		OPTL_INT(0, "phase-pole", &(conf.phasepoles), "d", "Use phase pole detection after d iterations (0 for every iteration)"),
 	};
 
 	cmdline(&argc, argv, ARRAY_SIZE(args), args, help_str, ARRAY_SIZE(opts), opts);
 
 
 	num_init_gpu_support();
+	num_rand_init(0ULL);
 	conf.gpu = bart_use_gpu;
 
 	long ksp_dims[DIMS];
@@ -334,7 +337,6 @@ int main_ncalib(int argc, char* argv[argc])
 		nufft_conf.toeplitz = true;
 		nufft_conf.pcycle = false;
 		nufft_conf.periodic = false;
-		nufft_conf.cache_psf_grdding = false;
 		nufft_conf.lowmem = true;
 		conf.nufft_conf = &nufft_conf;
 

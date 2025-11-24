@@ -1,5 +1,5 @@
-#ifndef RAND_H
-#define RAND_H
+#ifndef _RAND_H
+#define _RAND_H
 
 #include "misc/cppwrap.h"
 
@@ -11,6 +11,7 @@ extern void md_uniform_rand(int D, const long dims[__VLA(D)], _Complex float* ds
 extern void md_rand_one(int D, const long dims[__VLA(D)], _Complex float* dst, double p);
 
 extern void gaussian_rand_vec(long N, float* dst);
+extern void uniform_rand_vec(long N, float* dst);
 
 extern void num_rand_init(unsigned long long seed);
 
@@ -25,4 +26,5 @@ extern unsigned int rand_range_state(struct bart_rand_state* state, unsigned int
 extern unsigned long long rand_ull_state(struct bart_rand_state* state);
 
 #include "misc/cppwrap.h"
-#endif // RAND_H
+#endif // _RAND_H
+ 

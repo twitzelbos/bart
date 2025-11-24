@@ -2,9 +2,6 @@
  * Copyright 2015. Martin Uecker.
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
- *
- * Authors:
- * 2013, 2015 Martin Uecker
  */
 
 #include <math.h>
@@ -23,6 +20,9 @@
 #include "misc/pd.h"
 #include "misc/opts.h"
 
+#ifndef DIMS
+#define DIMS 16
+#endif
 
 static void random_point(int D, float p[static D])
 {
@@ -79,20 +79,20 @@ int main_poisson(int argc, char* argv[argc])
 	float mindist = 1. / 1.275;
 	float yscale = 1.;
 	float zscale = 1.;
-	unsigned int calreg = 0;
+	int calreg = 0;
 
 	const struct opt_s opts[] = {
 
-		OPT_INT('Y', &yy, "size", "size dimension 1"),
-		OPT_INT('Z', &zz, "size", "size dimension 2"),
+		OPT_PINT('Y', &yy, "size", "size dimension 1"),
+		OPT_PINT('Z', &zz, "size", "size dimension 2"),
 		OPT_FLOAT('y', &yscale, "acc", "acceleration dim 1"),
 		OPT_FLOAT('z', &zscale, "acc", "acceleration dim 2"),
-		OPT_UINT('C', &calreg, "size", "size of calibration region"),
+		OPT_PINT('C', &calreg, "size", "size of calibration region"),
 		OPT_SET('v', &vd_def, "variable density"),
 		OPT_FLOAT('V', &vardensity, "", "(variable density)"),
 		OPT_SET('e', &cutcorners, "elliptical scanning"),
 		OPT_FLOAT('D', &mindist, "", "()"),
-		OPT_INT('T', &T, "", "()"),
+		OPT_PINT('T', &T, "", "()"),
 		OPT_CLEAR('m', &msk, "()"),
 		OPT_INT('R', &points, "", "()"),
 		OPT_ULLONG('s', &randseed, "", "random seed initialization. '0' uses the default seed."),
@@ -128,18 +128,18 @@ int main_poisson(int argc, char* argv[argc])
 	}
 
 
-	long dims[5] = { 1, yy, zz, T, 1 };
+	long dims[DIMS] = { 1, yy, zz, T, 1, [5 ... DIMS - 1] = 1 };
 	complex float (*mask)[T][zz][yy] = NULL;
 
 	if (msk) {
-		
-		mask = MD_CAST_ARRAY3_PTR(complex float, 5, dims, create_cfl(out_file, 5, dims), 1, 2, 3);
+
+		mask = MD_CAST_ARRAY3_PTR(complex float, 5, dims, create_cfl(out_file, DIMS, dims), 1, 2, 3);
 		md_clear(5, dims, &(*mask)[0][0][0], sizeof(complex float));
 	}
 
 	int M = rnd ? (points + 1) : Pest;
 	int P;
-	
+
 	while (true) {
 
 		PTR_ALLOC(float[M][2], points);
@@ -183,8 +183,8 @@ int main_poisson(int argc, char* argv[argc])
 				(*points)[i][1] = ((*points)[i][1] - 0.5) * zscale + 0.5;
 			}
 
-			// throw away points outside 
-	
+			// throw away points outside
+
 			float center[2] = { 0.5, 0.5 };
 
 			int j = 0;
@@ -221,10 +221,10 @@ int main_poisson(int argc, char* argv[argc])
 			} else {
 
 #if 1
-				long sdims[2] = { 3, P };
+				long sdims[DIMS] = { 3, P, [2 ... DIMS -1] = 1 };
 				//complex float (*samples)[P][3] = (void*)create_cfl(argv[1], 2, sdims);
 				complex float (*samples)[P][3] =
-					MD_CAST_ARRAY2_PTR(complex float, 2, sdims, create_cfl(out_file, 2, sdims), 0, 1);
+					MD_CAST_ARRAY2_PTR(complex float, 2, sdims, create_cfl(out_file, DIMS, sdims), 0, 1);
 
 				for (int i = 0; i < P; i++) {
 
@@ -233,7 +233,7 @@ int main_poisson(int argc, char* argv[argc])
 					(*samples)[i][2] = ((*points)[i][1] - 0.5) * dims[2];
 					//	printf("%f %f\n", creal(samples[3 * i + 0]), creal(samples[3 * i + 1]));
 				}
-				unmap_cfl(2, sdims, &(*samples)[0][0]);
+				unmap_cfl(DIMS, sdims, &(*samples)[0][0]);
 #endif
 			}
 
@@ -253,9 +253,9 @@ int main_poisson(int argc, char* argv[argc])
 	assert((mask != NULL) || (0 == calreg));
 	assert((calreg <= dims[1]) && (calreg <= dims[2]));
 
-	for (int i = 0; i < (int)calreg; i++) {
+	for (int i = 0; i < calreg; i++) {
 
-		for (int j = 0; j < (int)calreg; j++) {
+		for (int j = 0; j < calreg; j++) {
 
 			int y = dims[1] / 2 - calreg / 2 + i;
 			int z = dims[2] / 2 - calreg / 2 + j;
@@ -283,13 +283,11 @@ int main_poisson(int argc, char* argv[argc])
 		printf(", grid size: %ldx%ld%s = %ld (R = %f)", dims[1], dims[2], cutcorners ? "x(pi/4)" : "",
 				(long)(f * dims[1] * dims[2]), f * T * dims[1] * dims[2] / (float)P);
 
-		unmap_cfl(5, dims, &(*mask)[0][0][0]);
+		unmap_cfl(DIMS, dims, &(*mask)[0][0][0]);
 	}
 
 	printf("\n");
 
 	return 0;
 }
-
-
 

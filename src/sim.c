@@ -5,7 +5,6 @@
  * Author: Nick Scholand, Martin Juschitz
  */
 
-
 #include <math.h>
 #include <complex.h>
 
@@ -18,8 +17,9 @@
 #include "misc/opts.h"
 #include "misc/debug.h"
 
+#include "seq/pulse.h"
+
 #include "simu/bloch.h"
-#include "simu/pulse.h"
 #include "simu/simulation.h"
 
 
@@ -159,13 +159,13 @@ int main_sim(int argc, char* argv[argc])
 		OPTL_SELECT(0, "CEST", enum sim_seq, &(data.seq.seq_type), SEQ_CEST, "CEST"),
 		OPTL_FLOAT(0, "TR", &(data.seq.tr), "float", "Repetition time [s]"),
 		OPTL_FLOAT(0, "TE", &(data.seq.te), "float", "Echo time [s]"),
-		OPTL_INT(0, "Nspins", &(data.seq.spin_num), "int", "Number of averaged spins"),
-		OPTL_INT(0, "Nrep", &(data.seq.rep_num), "int", "Number of repetitions"),
+		OPTL_PINT(0, "Nspins", &(data.seq.spin_num), "int", "Number of averaged spins"),
+		OPTL_PINT(0, "Nrep", &(data.seq.rep_num), "int", "Number of repetitions"),
 		OPTL_SET(0, "pinv", &(data.seq.perfect_inversion), "Use perfect inversions"),
 		OPTL_FLOAT(0, "ipl", &(data.seq.inversion_pulse_length), "float", "Inversion Pulse Length [s]"),
 		OPTL_FLOAT(0, "isp", &(data.seq.inversion_spoiler), "float", "Inversion Spoiler Gradient Length [s]"),
 		OPTL_FLOAT(0, "ppl", &(data.seq.prep_pulse_length), "float", "Preparation Pulse Length [s]"),
-		OPTL_INT(0, "av-spokes", &(data.seq.averaged_spokes), "", "Number of averaged consecutive spokes"),
+		OPTL_PINT(0, "av-spokes", &(data.seq.averaged_spokes), "", "Number of averaged consecutive spokes"),
 
 		/* Pulse Specific Parameters */
 		OPTL_FLOAT(0, "Trf", &(data.pulse.rf_end), "float", "Pulse Duration [s]"), /* Assumes to start at t=0 */
@@ -193,7 +193,7 @@ int main_sim(int argc, char* argv[argc])
 
 	struct opt_s pool_opts[] = {
 
-		OPT_INT('P', &(data.voxel.P), "int", "Number of pools"),
+		OPT_PINT('P', &(data.voxel.P), "int", "Number of pools"),
 		OPTL_FLVEC4(0, "T1", &T1pools, "<2nd pool>:<3rd pool>:<4th pool>:<5th pool>", "T1 values for further pools"),
 		OPTL_FLVEC4(0, "T2", &T2pools, "<2nd pool>:<3rd pool>:<4th pool>:<5th pool>", "T2 values for further pools"),
 		OPTL_FLVEC4(0, "Om", &Ompools, "<2nd pool>:<3rd pool>:<4th pool>:<5th pool>", "Om values for further pools"),
@@ -209,7 +209,7 @@ int main_sim(int argc, char* argv[argc])
 		OPTL_FLOAT(0, "gamma", &(data.cest.gamma), "float", "Gyromagnetic ratio [Mhz/T]"),
 		OPTL_FLOAT(0, "max", &(data.cest.off_start), "float", "Max offset [ppm]"),
 		OPTL_FLOAT(0, "min", &(data.cest.off_stop), "float", "Min offset [ppm]"),
-		OPTL_INT(0, "n_p", &(data.cest.n_pulses), "int", "Number of pulses"),
+		OPTL_PINT(0, "n_p", &(data.cest.n_pulses), "int", "Number of pulses"),
 		OPTL_FLOAT(0, "t_d", &(data.cest.t_d), "float", "Interpulse delay [s]"),
 		OPTL_FLOAT(0, "t_pp", &(data.cest.t_pp), "float", "Post-preparation delay [s]"),
 		OPTL_SET(0, "ref_scan", &(data.cest.ref_scan), "Use reference scan"),
@@ -223,10 +223,10 @@ int main_sim(int argc, char* argv[argc])
 		OPTL_FLVEC3('2', "T2", &T2, "min:max:N", "range of T2 values"),
 		OPTL_SELECT(0, "BLOCH", enum sim_model, &(data.seq.model), MODEL_BLOCH, "Bloch Equations (default)"),
 		OPTL_SELECT(0, "BMC", enum sim_model, &(data.seq.model), MODEL_BMC, "Bloch-McConnell Equations"),
-		OPTL_SELECT(0, "ROT", enum sim_type, &(data.seq.type), SIM_ROT, "homogeneously discretized simulation based on rotational matrices"),
-		OPTL_SELECT(0, "ODE", enum sim_type, &(data.seq.type), SIM_ODE, "full ordinary differential equation solver based simulation (default)"),
-		OPTL_SELECT(0, "STM", enum sim_type, &(data.seq.type), SIM_STM, "state-transition matrix based simulation"),
-		OPTL_SET(0, "split-dim", &split_dim, "Split magnetization into x, y, and z component"),
+		OPTL_SELECT(0, "ROT", enum sim_type, &(data.seq.type), SIM_ROT, "discretized simulation based on rotational matrices"),
+		OPTL_SELECT(0, "ODE", enum sim_type, &(data.seq.type), SIM_ODE, "ordinary differential equation solver (default)"),
+		OPTL_SELECT(0, "STM", enum sim_type, &(data.seq.type), SIM_STM, "solver based on state-transition matrices"),
+		OPTL_SET(0, "split-dim", &split_dim, "split magnetization into x, y, and z component"),
 		OPTL_SUBOPT(0, "seq", "...", "configure sequence parameter", N_seq_opts, seq_opts),
 		OPTL_SUBOPT(0, "other", "...", "configure other parameters", N_other_opts, other_opts),
 		OPTL_SUBOPT(0, "pool", "...", "configure parameters for 2nd->5th pool", N_pool_opts, pool_opts),
@@ -326,11 +326,8 @@ int main_sim(int argc, char* argv[argc])
 	md_free(td);
 
 	unmap_cfl(DIMS, mdims, signals);
-
-	if (NULL != out_deriv)
-		unmap_cfl(DIMS, ddims, deriv);
+	unmap_cfl(DIMS, ddims, deriv);
 
 	return 0;
 }
-
 

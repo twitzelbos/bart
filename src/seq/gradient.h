@@ -1,6 +1,6 @@
 
-#ifndef __GRADIENT_H
-#define __GRADIENT_H
+#ifndef _SEQ_GRADIENT_H
+#define _SEQ_GRADIENT_H
 
 #include <stdbool.h>
 
@@ -12,7 +12,6 @@ struct grad_limits {
 
 struct grad_trapezoid {
 
-	double start;	// FIXME, this will be removed
 	double rampup;
 	double flat;
 	double rampdown;
@@ -20,11 +19,12 @@ struct grad_trapezoid {
 	double ampl;
 };
 
+extern double grad_duration(const struct grad_trapezoid* grad);
 extern double grad_total_time(const struct grad_trapezoid* grad);
 extern double grad_momentum(struct grad_trapezoid* grad);
 
 extern bool grad_soft(struct grad_trapezoid* grad, double dur, double moment, struct grad_limits sys);
 extern bool grad_hard(struct grad_trapezoid* grad, double moment, struct grad_limits sys);
 
-#endif // __GRADIENT_H
+#endif // _SEQ_GRADIENT_H
 

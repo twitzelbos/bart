@@ -69,6 +69,7 @@ FFTWTHREADS?=1
 SCALAPACK?=0
 ISMRMRD?=0
 TENSORFLOW?=0
+PYTORCH?=0
 NOEXEC_STACK?=0
 PARALLEL?=0
 PARALLEL_NJOBS?=
@@ -106,6 +107,7 @@ MNAME = $(shell uname -m)
 NNAME = $(shell uname -n)
 
 MYLINK=ln
+
 
 
 ifeq ($(UNAME),Darwin)
@@ -149,10 +151,18 @@ ifneq (,$(findstring MSYS,$(UNAME)))
 endif
 
 
+
 ifeq ($(CC),emcc)
 	BUILDTYPE = WASM
 endif
 
+
+HAVE_NOEXECWARN := $(shell ld --help 2>&1 | grep -c "\-no\-warn\-execstack")
+ifneq ($(BUILDTYPE), WASM)
+ifneq ($(HAVE_NOEXECWARN), 0)
+	LDFLAGS += -Wl,-no-warn-execstack
+endif
+endif
 
 # Automatic dependency generation
 
@@ -249,6 +259,9 @@ CUDNN_LIB ?= lib64
 # tensorflow
 TENSORFLOW_BASE ?= /usr/local/
 
+# pytorch
+PYTORCH_BASE ?= /usr/
+
 # acml
 
 ACML_BASE ?= /usr/local/acml/acml4.4.0/gfortran64_mp/
@@ -277,16 +290,16 @@ ISMRM_BASE ?= /usr/local/ismrmrd/
 
 # Main build targets
 #
-TBASE=show slice crop resize join transpose squeeze flatten zeros ones flip circshift extract repmat bitmask reshape version delta copy casorati vec poly index
-TFLP=scale invert conj fmac saxpy sdot spow cpyphs creal carg normalize cdf97 pattern nrmse mip avg cabs zexp calc unwrap
-TNUM=fft fftmod fftshift noise bench threshold conv rss filter nlmeans mandelbrot wavelet window var std fftrot roistat pol2mask conway morphop
-TRECO=pics pocsense sqpics itsense nlinv moba nufft nufftbase rof tgv ictv sake wave lrmatrix estdims estshift estdelay wavepsf wshfl rtnlinv mobafit grog denoise
-TCALIB=ecalib ecaltwo caldir walsh cc ccapply rovir calmat svd estvar whiten rmfreq ssa bin psf ncalib
-TMRI=homodyne poisson twixread fakeksp looklocker upat fovshift
-TSIM=phantom traj signal epg sim raga stl
-TIO=tee toimg toraw multicfl trx
-TNN=reconet nnet onehotenc measure mnist tensorflow nlinvnet
-TMOTION=affinereg interpolate estmotion
+TBASE+=show slice crop resize join transpose squeeze flatten zeros ones flip circshift extract repmat bitmask reshape version delta copy casorati vec poly index multicfl tee trx compress
+TFLP+=scale invert conj fmac saxpy sdot spow cpyphs creal carg normalize cdf97 pattern nrmse mip avg cabs zexp calc unwrap
+TNUM+=fft fftmod fftshift noise bench threshold conv rss filter nlmeans mandelbrot wavelet window var std fftrot roistat pol2mask conway morphop hist gmm
+TRECO+=pics pocsense sqpics itsense nlinv moba nufft nufftbase rof tgv ictv sake wave lrmatrix estdims estshift estdelay wavepsf wshfl rtnlinv mobafit grog denoise estscaling
+TCALIB+=ecalib ecaltwo caldir walsh cc ccapply rovir calmat svd estvar whiten rmfreq ssa bin psf ncalib phasepole
+TMRI+=homodyne poisson twixread fakeksp looklocker upat fovshift seq
+TSIM+=phantom traj signal epg sim pulse raga stl bloch grid trajcor coils
+TIO+=tee toimg toraw multicfl trx
+TNN+=reconet nnet onehotenc measure mnist tensorflow nlinvnet sample
+TMOTION+=affinereg interpolate estmotion
 
 TBASE:=$(sort $(TBASE))
 TFLP:=$(sort $(TFLP))
@@ -311,20 +324,21 @@ MODULES_sqpics = -lsense -liter -llinops -lwavelet -llowrank -lnoncart -llinops
 MODULES_pocsense = -lsense -liter -llinops -lwavelet
 MODULES_nlinv = -lnoir -lgrecon -lwavelet -llowrank -lnn -liter -lnlops -llinops -lnoncart
 MODULES_ncalib = -lnoir -lgrecon -lwavelet -llowrank -lnn -liter -lnlops -llinops -lnoncart
+MODULES_phasepole = -lnoir -lgrecon -lwavelet -llowrank -lnn -liter -lnlops -llinops -lnoncart
 MODULES_rtnlinv = -lnoir -liter -lnlops -llinops -lnoncart
-MODULES_moba = -lmoba -lnoir -lnn -lnlops -llinops -lwavelet -lnoncart -lsimu -lgrecon -llowrank -llinops -liter -lnn
-MODULES_mobafit = -lmoba -lnlops -llinops -lsimu -liter -lnoir
+MODULES_moba = -lmoba -lnoir -lnn -lnlops -llinops -lwavelet -lnoncart -lseq -lsimu -lgrecon -llowrank -llinops -liter -lnn
+MODULES_mobafit = -lmoba -lnlops -llinops -lseq -lsimu -liter -lnoir
 MODULES_bpsense = -lsense -lnoncart -liter -llinops -lwavelet
 MODULES_itsense = -liter -llinops
 MODULES_ecalib = -lcalib -llinops
 MODULES_ecaltwo = -lcalib -llinops
-MODULES_estdelay = -lcalib
-MODULES_caldir = -lcalib
-MODULES_walsh = -lcalib
-MODULES_calmat = -lcalib
+MODULES_estdelay = -lcalib -lnoncart
+MODULES_caldir = -lcalib -llinops
+MODULES_walsh = -lcalib -llinops
+MODULES_calmat = -lcalib -llinops
 MODULES_cc = -lcalib -llinops
 MODULES_ccapply = -lcalib -llinops
-MODULES_estvar = -lcalib
+MODULES_estvar = -lcalib -llinops
 MODULES_nufft = -lnoncart -liter -llinops
 MODULES_rof = -liter -llinops
 MODULES_tgv = -liter -llinops
@@ -332,10 +346,12 @@ MODULES_ictv = -liter -llinops
 MODULES_denoise = -lgrecon -liter -llinops -lwavelet -llowrank -lnoncart -lnn -lnlops
 MODULES_bench = -lwavelet -llinops
 MODULES_phantom = -lsimu -lgeom
-MODULES_bart = -lbox -lgrecon -lsense -lnoir -liter -llinops -lwavelet -llowrank -lnoncart -lcalib -lsimu -lsake -lnlops -lnetworks -lnoir -lnn -liter -lmoba -lgeom -lnn  -lmotion -lnlops -lstl
+MODULES_bart = -lbox -lgrecon -lsense -lnoir -liter -llinops -lwavelet -llowrank -lnoncart -lcalib -llinops -lseq -lsimu -lsake -lnlops -lnetworks -lnoir -lnn -liter -lmoba -lgeom -lnn  -lmotion -lnlops -lstl
 MODULES_sake = -lsake
 MODULES_traj = -lnoncart
-MODULES_raga = -lnoncart
+MODULES_grid = -lsimu
+MODULES_coils = -lsimu -lgeom
+MODULES_raga = -lnoncart -lseq
 MODULES_wave = -liter -lwavelet -llinops -llowrank
 MODULES_threshold = -llowrank -liter -llinops -lwavelet
 MODULES_fakeksp = -lsense -llinops
@@ -344,8 +360,8 @@ MODULES_estdims =
 MODULES_ismrmrd = -lismrm
 MODULES_wavelet = -llinops -lwavelet
 MODULES_wshfl = -lgrecon -lsense -liter -llinops -lwavelet -llowrank -lnoncart -lnlops -lnn -lnlops
-MODULES_ssa = -lcalib
-MODULES_bin = -lcalib
+MODULES_ssa = -lcalib -llinops
+MODULES_bin = -lcalib -llinops
 MODULES_signal = -lsimu
 MODULES_pol2mask = -lgeom
 MODULES_epg = -lsimu
@@ -353,19 +369,23 @@ MODULES_reconet = -lgrecon -lnetworks -lnoncart -lnn -lnlops -llinops -liter
 MODULES_mnist = -lnetworks -lnn -lnlops -llinops -liter
 MODULES_nnet = -lgrecon -lnetworks -lnoncart -lnn -lnlops -llinops -liter
 MODULES_tensorflow = -lnn -lnlops -llinops -liter
+MODULES_sample = -lnetworks -lnn -lnlops -llinops -liter
 MODULES_measure = -lgrecon -lnetworks -lnoncart -lnn -lnlops -llinops -liter
 MODULES_onehotenc = -lnn
-MODULES_sim = -lsimu
+MODULES_sim = -lseq -lsimu
 MODULES_morphop = -lnlops -llinops -lgeom
 MODULES_psf = -lnoncart -llinops
 MODULES_nlinvnet = -lnetworks -lnoir -liter -lnn -lnlops -llinops -lnoncart -lgrecon -lnetworks -lsense -liter -llinops -lwavelet -llowrank -lnoncart -lnlops -lnn
-MODULES_grog = -lcalib
+MODULES_grog = -lcalib -llinops
 MODULES_affinereg = -lmotion -liter -lnlops -llinops
 MODULES_estmotion = -lmotion -lnn -liter -lnlops -llinops
 MODULES_interpolate = -lmotion -liter -lnlops -llinops
-MODULES_unwrap = -llinops
 MODULES_stl = -lstl
-
+MODULES_estscaling = -lsense -llinops
+MODULES_pulse = -lseq
+MODULES_bloch = -lseq -lsimu
+MODULES_trajcor = -lcalib -lnoncart -llinops
+MODULES_seq = -lseq -lnoncart -lsimu
 
 
 GCCVERSION12 := $(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 12)
@@ -418,6 +438,14 @@ CPPFLAGS += -DTENSORFLOW -I$(TENSORFLOW_BASE)/include
 LIBS += -L$(TENSORFLOW_BASE)/lib -Wl,-rpath $(TENSORFLOW_BASE)/lib -ltensorflow_framework -ltensorflow
 endif
 
+ifeq ($(PYTORCH),1)
+CPPFLAGS += -DPYTORCH -I$(PYTORCH_BASE)/include/torch/csrc/api/include/ -I$(PYTORCH_BASE)/include/
+LIBS += -L$(PYTORCH_BASE)/lib -Wl,--no-as-needed,-rpath $(PYTORCH_BASE)/lib -ltorch -ltorch_cpu -lc10
+ifeq ($(CUDA),1)
+LIBS += -ltorch_cuda -lc10_cuda
+endif
+endif
+
 
 
 XTARGETS += $(TBASE) $(TFLP) $(TNUM) $(TIO) $(TRECO) $(TCALIB) $(TMRI) $(TSIM) $(TNN) $(TMOTION)
@@ -457,7 +485,7 @@ endif
 
 CPPFLAGS += $(DEPFLAG) -iquote $(srcdir)/
 CFLAGS += -std=gnu17
-CXXFLAGS += -std=c++14
+CXXFLAGS += -std=c++17
 
 
 
@@ -486,7 +514,7 @@ ifeq ($(BUILDTYPE), MacOSX)
 CUDA_L := -L$(CUDA_BASE)/$(CUDA_LIB) -lcufft -lcudart -lcublas -m64 -lstdc++
 else
 ifeq ($(CUDNN),1)
-CUDA_L := -L$(CUDA_BASE)/$(CUDA_LIB) -L$(CUDNN_BASE)/$(CUDNN_LIB) -lcudnn -lcufft -lcudart -lcublas -lstdc++ -Wl,-rpath $(CUDA_BASE)/$(CUDA_LIB)
+CUDA_L := -L$(CUDA_BASE)/$(CUDA_LIB) -L$(CUDNN_BASE)/$(CUDNN_LIB) -lcudnn -lcufft -lcudart -lcublas -lstdc++ -Wl,-rpath $(CUDA_BASE)/$(CUDA_LIB) -Wl,-rpath $(CUDNN_BASE)/$(CUDNN_LIB)
 else
 CUDA_L := -L$(CUDA_BASE)/$(CUDA_LIB) -lcufft -lcudart -lcublas -lstdc++ -Wl,-rpath $(CUDA_BASE)/$(CUDA_LIB)
 endif
@@ -691,6 +719,11 @@ CPPFLAGS += $(ISMRM_H)
 LIBS += -lstdc++
 endif
 
+ifeq ($(PYTORCH),1)
+nnextracxxsrcs += $(srcdir)/nn/pytorch_cpp_wrapper.cc
+LIBS += -lstdc++
+endif
+
 
 # change for static linking
 
@@ -759,8 +792,9 @@ lib/libismrm.a: CPPFLAGS += $(ISMRM_H)
 lib/libbox.a: CPPFLAGS += -include src/main.h
 
 # lib calib
-UTARGETS += test_grog
+UTARGETS += test_grog test_casorati
 MODULES_test_grog += -lcalib -lnoncart -lsimu -lgeom
+MODULES_test_casorati+= -lcalib -llinops -liter
 
 # lib linop
 UTARGETS += test_linop_matrix test_linop test_padding
@@ -777,7 +811,7 @@ UTARGETS += test_pattern test_types test_misc test_memcfl test_tree test_streams
 
 # lib moba
 UTARGETS += test_moba
-MODULES_test_moba += -lmoba -lnoir -llowrank -lwavelet -liter -lnlops -llinops -lsimu
+MODULES_test_moba += -lmoba -lnoir -llowrank -lwavelet -liter -lnlops -llinops -lseq -lsimu
 
 # lib nlop
 UTARGETS += test_nlop test_nlop_jacobian
@@ -790,13 +824,23 @@ MODULES_test_nufft += -lnoncart -llinops
 MODULES_test_fib += -lnoncart
 
 # lib seq
-UTARGETS += test_gradient
+UTARGETS += test_gradient test_events test_angle_calc test_adc_rf test_flash test_seq test_pulseq
 MODULES_test_gradient += -lseq
-
+MODULES_test_events += -lseq
+MODULES_test_angle_calc += -lseq -lsimu -lnoncart
+MODULES_test_adc_rf += -lseq -lsimu -lnoncart
+MODULES_test_flash += -lseq -lsimu -lnoncart
+MODULES_test_seq += -lseq -lsimu -lnoncart
+MODULES_test_pulseq += -lseq -lnoncart
 
 # lib num
-UTARGETS += test_multind test_flpmath test_splines test_linalg test_polynom test_window test_conv test_ode test_nlmeans test_rand test_matexp
-UTARGETS += test_blas test_mdfft test_ops test_ops_p test_flpmath2 test_convcorr test_specfun test_qform test_fft test_gaussians
+UTARGETS += test_multind test_flpmath test_splines test_linalg test_polynom test_window test_conv
+UTARGETS += test_ode test_nlmeans test_rand test_matexp
+UTARGETS += test_blas test_mdfft test_ops test_ops_p test_flpmath2 test_convcorr test_specfun test_qform test_fft test_gaussians test_md_gaussians
+UTARGETS += test_lapack
+UTARGETS += test_morph
+UTARGETS += test_linalg_rand
+MODULES_test_linalg_rand += -llinops
 ifeq ($(MPI),1)
 UTARGETS += test_mpi test_mpi_multind test_mpi_flpmath test_mpi_fft
 endif
@@ -805,11 +849,11 @@ UTARGETS_GPU += test_cudafft test_cuda_flpmath test_cuda_flpmath2 test_cuda_gpuk
 # lib simu
 UTARGETS += test_ode_bloch test_ode_simu test_biot_savart test_signals test_epg test_pulse test_tsegf
 MODULES_test_ode_bloch += -lsimu
-MODULES_test_ode_simu += -lsimu
+MODULES_test_ode_simu += -lseq -lsimu
 MODULES_test_biot_savart += -lsimu
 MODULES_test_signals += -lsimu
 MODULES_test_epg += -lsimu
-MODULES_test_pulse += -lsimu
+MODULES_test_pulse += -lseq -lsimu
 MODULES_test_tsegf += -lsimu
 
 # lib geom
@@ -828,6 +872,13 @@ MODULES_test_asl += -liter -llinops -lnlops
 ifeq ($(TENSORFLOW),1)
 UTARGETS += test_nn_tf
 MODULES_test_nn_tf += -lnn -lnlops -llinops
+endif
+
+ifeq ($(PYTORCH),1)
+UTARGETS += test_nn_pytorch
+UTARGETS_GPU += test_nn_pytorch_cuda
+MODULES_test_nn_pytorch += -lnn -lnlops -llinops
+MODULES_test_nn_pytorch_cuda += -lnn -lnlops -llinops
 endif
 
 
@@ -974,7 +1025,8 @@ $(UTARGETS_GPU): % : utests/utest.c utests/%.o $$(MODULES_%) $(MODULES)
 ROOTDIR=$(root)
 TOOLDIR=$(root)/commands
 TESTS_DIR=$(root)/tests
-TESTS_TMP=$(TESTS_DIR)/tmp/$$$$
+TESTS_TMP_DIR?=$(TESTS_DIR)/tmp
+TESTS_TMP=$(TESTS_TMP_DIR)/$$$$
 TESTS_OUT=$(TESTS_DIR)/out
 
 
@@ -994,6 +1046,8 @@ testslow: ${TESTS_SLOW}
 testague: ${TESTS_AGUE} # test importing *.dat-files specified in tests/twixread.mk
 
 gputest: ${TESTS_GPU}
+
+mpitest: ${TESTS_MPI}
 
 pythontest: ${TESTS_PYTHON}
 

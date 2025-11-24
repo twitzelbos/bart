@@ -24,6 +24,7 @@
 #include "num/multind.h"
 #include "num/fft.h"
 #include "num/init.h"
+#include "num/rand.h"
 
 #include "calib/calib.h"
 #include "calib/estvar.h"
@@ -71,12 +72,14 @@ int main_ecalib(int argc, char* argv[argc])
 		OPT_VEC3('K', &conf.kdims, "", "()"),
 		OPT_VEC3('r', &calsize, "cal_size", "Limits the size of the calibration region."),
 		OPT_VEC3('R', &calsize, "", "()"),
-		OPT_INT('m', &maps, "maps", "Number of maps to compute."),
+		OPT_PINT('m', &maps, "maps", "Number of maps to compute."),
 		OPT_SET('S', &conf.softcrop, "create maps with smooth transitions (Soft-SENSE)."),
 		OPT_SET('W', &conf.weighting, "soft-weighting of the singular vectors."),
 		OPT_SET('I', &conf.intensity, "intensity correction"),
 		OPT_SET('1', &one, "perform only first part of the calibration"),
 		OPT_CLEAR('P', &conf.rotphase, "Do not rotate the phase with respect to the first principal component"),
+		OPT_SET('N', &conf.phase_normalize, "Use phase normalization"),
+		OPT_SET('A', &conf.nystroem, "Approximate eigenvalue decomposition using Nyström"),
 		OPT_CLEAR('O', &conf.orthiter, "()"),
 		OPTL_INT('i', "orthiter", &conf.num_orthiter, "orthiter", "()"),
 		OPT_FLOAT('b', &conf.perturb, "", "()"),
@@ -84,9 +87,10 @@ int main_ecalib(int argc, char* argv[argc])
 		OPT_SET('C', &calcen, "()"),
 		OPT_SET('g', &conf.usegpu, "()"),
 		OPT_FLOAT('p', &conf.percentsv, "", "()"),
-		OPT_INT('n', &conf.numsv, "", "()"),
+		OPT_PINT('n', &conf.numsv, "", "()"),
 		OPT_FLOAT('v', &conf.var, "variance", "Variance of noise in data."),
 		OPT_SET('a', &conf.automate, "Automatically pick thresholds."),
+		OPT_INT('e', &conf.econdim, "dim", "(Split second step along selected dimension, default: selects 2 for 3D and -1 (deactivated) for 2D)"),
 		OPT_INT('d', &debug_level, "level", "Debug level"),
 	};
 
@@ -117,7 +121,10 @@ int main_ecalib(int argc, char* argv[argc])
 
 	complex float* in_data = load_cfl(in_file, N, ksp_dims);
 
-	
+	if (-2 == conf.econdim)
+		conf.econdim = (3 == bitcount(md_nontriv_dims(3, ksp_dims)) ? 2 : -1);
+
+
 	// assert((kdims[0] < calsize_ro) && (kdims[1] < calsize_ro) && (kdims[2] < calsize_ro));
 	// assert((ksp_dims[0] == 1) || (calsize_ro < ksp_dims[0]));
 	if (1 != ksp_dims[MAPS_DIM])
@@ -132,10 +139,10 @@ int main_ecalib(int argc, char* argv[argc])
 #ifdef USE_CC_EXTRACT_CALIB
 		cal_data = cc_extract_calib(cal_dims, calsize, ksp_dims, in_data);
 #else
-		cal_data = extract_calib(cal_dims, calsize, ksp_dims, in_data, false);
+		cal_data = extract_calib(cal_dims, calsize, ksp_dims, in_data, conf.phase_normalize);
 #endif
 	} else {
-	
+
 		for (int i = 0; i < 3; i++)
 			cal_dims[i] = (calsize[i] < ksp_dims[i]) ? calsize[i] : ksp_dims[i];
 
@@ -171,6 +178,7 @@ int main_ecalib(int argc, char* argv[argc])
 	// FIXME: we should scale the data
 	bart_use_gpu = conf.usegpu;
 	num_init_gpu_support();
+	num_rand_init(0);
 
         if ((conf.var < 0.) && (conf.weighting || (conf.crop < 0.))) {
 
@@ -228,14 +236,14 @@ int main_ecalib(int argc, char* argv[argc])
 
 
 		out_dims[COIL_DIM] = ksp_dims[COIL_DIM];
-		out_dims[MAPS_DIM] = maps;	
+		out_dims[MAPS_DIM] = maps;
 		map_dims[COIL_DIM] = 1;
 		map_dims[MAPS_DIM] = maps;
 
 		complex float* out_data = create_cfl(out_file, N, out_dims);
 		complex float* emaps = (emaps_file ? create_cfl : anon_cfl)(emaps_file, N, map_dims);
 
-		calib(&conf, out_dims, out_data, emaps, K, svals, cal_dims, cal_data); 
+		calib(&conf, out_dims, out_data, emaps, K, svals, cal_dims, cal_data);
 
 		unmap_cfl(N, out_dims, out_data);
 		unmap_cfl(N, map_dims, emaps);
@@ -254,5 +262,4 @@ int main_ecalib(int argc, char* argv[argc])
 
 	return 0;
 }
-
 

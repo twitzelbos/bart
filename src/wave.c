@@ -5,7 +5,7 @@
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
  *
- * Authors: 
+ * Authors:
  * 2015 Berkin Bilgic <berkin@nmr.mgh.harvard.edu>
  * 2015 Martin Uecker
  * 2018-2019 Siddharth Iyer <ssi@mit.edu>
@@ -27,6 +27,7 @@
 #include "num/iovec.h"
 #include "num/ops_p.h"
 #include "num/ops.h"
+#include "num/rand.h"
 #ifdef USE_CUDA
 #include "num/gpuops.h"
 #endif
@@ -51,7 +52,7 @@
 #include "wavelet/wavthresh.h"
 #include "lowrank/lrthresh.h"
 
-static const char help_str[]  = 
+static const char help_str[]  =
 	"Perform a wave-caipi reconstruction.\n\n"
 	"Conventions:\n"
 	"  * (sx, sy, sz) - Spatial dimensions.\n"
@@ -67,7 +68,7 @@ static const char help_str[]  =
 	"  * output  - ( sx, sy, sz,  1, md)";
 
 /* Helper function to print out operator dimensions. */
-static void print_opdims(const struct linop_s* op) 
+static void print_opdims(const struct linop_s* op)
 {
 	const struct iovec_s* domain   = linop_domain(op);
 	const struct iovec_s* codomain = linop_codomain(op);
@@ -195,7 +196,7 @@ int main_wave(int argc, char* argv[argc])
 	const struct opt_s opts[] = {
 
 		OPT_FLOAT( 'r', &lambda,  "lambda", "Soft threshold lambda for wavelet or locally low rank."),
-		OPT_INT(   'b', &blksize, "blkdim", "Block size for locally low rank."),
+		OPT_PINT(  'b', &blksize, "blkdim", "Block size for locally low rank."),
 		OPT_INT(   'i', &maxiter, "mxiter", "Maximum number of iterations."),
 		OPT_FLOAT( 's', &step,    "stepsz", "Step size for iterative method."),
 		OPT_FLOAT( 'c', &cont,    "cntnu",  "Continuation value for IST/FISTA."),
@@ -225,6 +226,7 @@ int main_wave(int argc, char* argv[argc])
 	debug_printf(DP_INFO, "Done.\n");
 
 	num_init_gpu_support();
+	num_rand_init(0ULL);
 
 	int wx = wave_dims[0];
 	int sx = maps_dims[0];
@@ -305,7 +307,7 @@ int main_wave(int argc, char* argv[argc])
 
 	print_opdims(A);
 
-	if (eval < 0)	
+	if (eval < 0)
 #ifdef USE_CUDA
 		eval = bart_use_gpu ? estimate_maxeigenval_gpu(A->normal) : estimate_maxeigenval(A->normal);
 #else
@@ -328,7 +330,7 @@ int main_wave(int argc, char* argv[argc])
 	minsize[0] = MIN(sx, 16);
 	minsize[1] = MIN(sy, 16);
 	minsize[2] = MIN(sz, 16);
-	unsigned int WAVFLAG = (sx > 1) * READ_FLAG | (sy > 1) * PHS1_FLAG | (sz > 2) * PHS2_FLAG;
+	unsigned long WAVFLAG = (sx > 1) * READ_FLAG | (sy > 1) * PHS1_FLAG | (sz > 2) * PHS2_FLAG;
 
 	enum algo_t algo = CG;
 

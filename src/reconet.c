@@ -19,14 +19,15 @@
 
 #include "num/multind.h"
 #include "num/init.h"
+#include "num/rand.h"
+
+#include "noncart/nufft.h"
 
 #include "iter/iter6.h"
-#include "iter/iter.h"
 
 #include "nn/data_list.h"
 #include "nn/weights.h"
 
-#include "networks/cnn.h"
 #include "networks/unet.h"
 #include "networks/tf.h"
 #include "networks/reconet.h"
@@ -78,7 +79,6 @@ int main_reconet(int argc, char* argv[argc])
 
 	const char* filename_mask = NULL;
 	const char* filename_mask_val = NULL;
-
 
 	struct opt_s dc_opts[] = {
 
@@ -141,7 +141,7 @@ int main_reconet(int argc, char* argv[argc])
 		OPTL_SUBOPT(0, "resnet-block", "...", "configure residual block", N_res_block_opts, res_block_opts),
 		OPTL_SUBOPT(0, "varnet-block", "...", "configure variational block", N_variational_block_opts, variational_block_opts),
 		OPTL_SUBOPT(0, "tensorflow", "...", "configure tensorflow as network", N_tensorflow_opts, network_tensorflow_opts),
-		OPTL_SUBOPT(0, "unet", "...", "configure U-Net block", N_unet_reco_opts, unet_reco_opts),
+		//OPTL_SUBOPT(0, "unet", "...", "configure U-Net block", N_unet_reco_opts, unet_reco_opts),
 
 		OPTL_SUBOPT(0, "data-consistency", "...", "configure data-consistency method", ARRAY_SIZE(dc_opts), dc_opts),
 		OPTL_SUBOPT(0, "initial-reco", "...", "configure initialization", ARRAY_SIZE(init_opts), init_opts),
@@ -158,6 +158,8 @@ int main_reconet(int argc, char* argv[argc])
 		OPTL_INOUTFILE(0, "adjoint", &(data.filename_adjoint), "<file>", "(validation data adjoint (load or export))"),
 		OPTL_INOUTFILE(0, "psf", &(data.filename_psf), "<file>", "(psf (load or export))"),
 		OPTL_SET(0, "export", &(data.export), "(export psf and adjoint reconstruction)"),
+
+		OPTL_SUBOPT(0, "nufft-conf", "...", "configure nufft", N_nufft_conf_opts, nufft_conf_opts),
 
 		OPTL_INFILE(0, "mask", &(filename_mask), "<mask>", "mask for computation of loss"),
 
@@ -177,6 +179,9 @@ int main_reconet(int argc, char* argv[argc])
 		OPTL_STRING(0, "export-graph", &graph_filename, "<file.dot>", "export graph for visualization"),
 
 		OPT_INFILE('B', &(data.filename_basis), "file", "(temporal (or other) basis)"),
+
+		OPTL_SET(0, "ksp-training", &(config.ksp_training), "Train network on k-space data"),
+		OPTL_CLEAR(0, "no-precomp", &(config.precomp), "Don't precompute adjoint and psf"),
 	};
 
 	const char* filename_weights;
@@ -190,6 +195,9 @@ int main_reconet(int argc, char* argv[argc])
 	};
 
 	cmdline(&argc, argv, ARRAY_SIZE(args), args, help_str, ARRAY_SIZE(opts), opts);
+
+	data.nufft_conf = &nufft_conf_options;
+	valid_data.nufft_conf = &nufft_conf_options;
 
 	if (train)
 		config.train_conf = iter6_get_conf_from_opts();
@@ -262,17 +270,21 @@ int main_reconet(int argc, char* argv[argc])
 
 	config.gpu = bart_use_gpu;
 	num_init_gpu_support();
+	num_rand_init(0ULL);
 
 	if (apply)
 		data.create_out = true;
 
 	data.load_mem = load_mem;
 	data.gpu = config.gpu;
+	data.precomp = config.precomp;
 	load_network_data(&data);
+	config.sense_config = data.conf;
+	config.ref_is_kspace = (0 == strcmp(data.filename_kspace, data.filename_out));
 
 	Nb = MIN(Nb, network_data_get_tot(&data));
 
-	if (config.sense_init && (-1. != config.init_lambda_fixed)) {
+	if (config.sense_init && (-1. != config.init_lambda_fixed) && config.precomp) {
 
 		network_data_compute_init(&data, config.init_lambda_fixed, config.init_max_iter);
 		config.external_initialization = true;
@@ -280,7 +292,7 @@ int main_reconet(int argc, char* argv[argc])
 
 	if (config.normalize)
 		network_data_normalize(&data);
-	
+
 	network_data_slice_dim_to_batch_dim(&data);
 
 
@@ -295,12 +307,13 @@ int main_reconet(int argc, char* argv[argc])
 
 		use_valid_data = true;
 		valid_data.filename_basis = data.filename_basis;
-		
-		load_network_data(&valid_data);
 		valid_data.gpu = config.gpu;
+		valid_data.precomp = config.precomp;
+
+		load_network_data(&valid_data);
 		network_data_slice_dim_to_batch_dim(&valid_data);
-		
-		if (config.sense_init && (-1. != config.init_lambda_fixed))
+
+		if (config.sense_init && (-1. != config.init_lambda_fixed) && config.precomp)
 			network_data_compute_init(&valid_data, config.init_lambda_fixed, config.init_max_iter);
 
 		if (config.normalize)
@@ -313,15 +326,6 @@ int main_reconet(int argc, char* argv[argc])
 
 	if (NULL != filename_weights_load)
 		config.weights = load_nn_weights(filename_weights_load);
-
-	if (NULL != data.filename_trajectory) {
-
-		config.mri_config->noncart = true;
-		config.mri_config->nufft_conf = data.nufft_conf;
-	}
-
-	if (NULL != data.filename_basis)
-		config.mri_config->basis_flags = TE_FLAG | COEFF_FLAG;
 
 	if (train) {
 
@@ -354,7 +358,7 @@ int main_reconet(int argc, char* argv[argc])
 			}
 		}
 
-		train_reconet(&config, data.N, data.max_dims, data.ND, data.psf_dims, Nb, train_data_list, Nt_val, valid_data_list);
+		train_reconet(&config, Nb, train_data_list, Nt_val, valid_data_list);
 		dump_nn_weights(filename_weights, config.weights);
 
 		named_data_list_free(train_data_list);
@@ -367,6 +371,9 @@ int main_reconet(int argc, char* argv[argc])
 
 		if (NULL != mask_val)
 			unmap_cfl(DIMS, mask_dims_val, mask_val);
+
+		if (use_valid_data)
+			free_network_data(&valid_data);
 	}
 
 	if (eval) {
@@ -376,8 +383,8 @@ int main_reconet(int argc, char* argv[argc])
 		if (NULL == config.weights)
 			config.weights = load_nn_weights(filename_weights);
 
-		eval_reconet(&config, data.N, data.max_dims, data.ND, data.psf_dims, eval_data_list);
-	
+		eval_reconet(&config, eval_data_list);
+
 		named_data_list_free(eval_data_list);
 	}
 
@@ -386,7 +393,7 @@ int main_reconet(int argc, char* argv[argc])
 		auto apply_data_list = network_data_get_named_list(&data);
 
 		config.weights = load_nn_weights(filename_weights);
-		apply_reconet(&config, data.N, data.max_dims, data.ND, data.psf_dims, apply_data_list);
+		apply_reconet(&config, apply_data_list);
 
 		named_data_list_free(apply_data_list);
 	}
@@ -399,3 +406,4 @@ int main_reconet(int argc, char* argv[argc])
 
 	return 0;
 }
+

@@ -2,9 +2,6 @@
  * Copyright 2015. Martin Uecker.
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
- *
- * Authors:
- * 2013, 2015 Martin Uecker
  */
 
 #include <complex.h>
@@ -73,7 +70,6 @@ int main_svd(int argc, char* argv[argc])
 
 	md_free(SF);
 
-
 	unmap_cfl(N, dims, in);
 	unmap_cfl(N, dimsU, U);
 	unmap_cfl(N, dimsS, S);
@@ -81,5 +77,4 @@ int main_svd(int argc, char* argv[argc])
 
 	return 0;
 }
-
 

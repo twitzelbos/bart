@@ -1,12 +1,6 @@
-/* Copyright 2013-2014. The Regents of the University of California.
- * Copyright 2015-2020. Martin Uecker.
- * Copyright 2017. University of Oxford.
- * All rights reserved. Use of this source code is governed by
- * a BSD-style license which can be found in the LICENSE file.
- */
 
-#ifndef __FLPMATH
-#define __FLPMATH
+#ifndef _FLPMATH_H
+#define _FLPMATH_H
 
 #include "misc/cppwrap.h"
 
@@ -181,8 +175,13 @@ extern void md_zabs2(int D, const long dim[__VLA(D)], const long ostr[__VLA(D)],
 extern void md_zatanr(int D, const long dim[__VLA(D)], _Complex float* optr, const _Complex float* iptr);
 extern void md_zatanr2(int D, const long dim[__VLA(D)], const long ostr[__VLA(D)], _Complex float* optr, const long istr[__VLA(D)], const _Complex float* iptr);
 
+extern void md_zatan2r(int D, const long dim[__VLA(D)], _Complex float* optr, const _Complex float* iptr1, const _Complex float* iptr2);
+extern void md_zatan2r2(int D, const long dim[__VLA(D)], const long ostr[__VLA(D)], _Complex float* optr, const long istr1[__VLA(D)], const _Complex float* iptr1, const long istr2[__VLA(D)], const _Complex float* iptr2);
+
 extern void md_zmax(int D, const long dims[__VLA(D)], _Complex float* optr, const _Complex float* iptr1, const _Complex float* iptr2);
 extern void md_zmax2(int D, const long dims[__VLA(D)], const long ostr[__VLA(D)], _Complex float* optr, const long istr1[__VLA(D)], const _Complex float* iptr1, const long istr2[__VLA(D)], const _Complex float* iptr2);
+
+extern void md_reduce_zmax(int D, const long dims[__VLA(D)], unsigned long rflags, _Complex float* dst, const _Complex float* src);
 
 extern void md_max(int D, const long dim[__VLA(D)], float* optr, const float* iptr1, const float* iptr2);
 extern void md_max2(int D, const long dim[__VLA(D)], const long ostr[__VLA(D)], float* optr, const long istr1[__VLA(D)], const float* iptr1, const long istr2[__VLA(D)], const float* iptr2);
@@ -379,6 +378,8 @@ extern void md_zfdiff_backwards2(int D, const long dims[__VLA(D)], int d, const 
 extern void md_zfdiff_backwards(int D, const long dims[__VLA(D)], int d, _Complex float* out, const _Complex float* in);
 extern void md_zfdiff_backwards0(int D, const long dims[__VLA(D)], int d, _Complex float* out, const _Complex float* in);
 
+extern void md_zcumsum(int D, const long dim[__VLA(D)], unsigned long flags, _Complex float* optr, const _Complex float* iptr);
+extern void md_zcumsum2(int D, const long dim[__VLA(D)], unsigned long flags, const long ostr[__VLA(D)], _Complex float* optr, const long istr[__VLA(D)], const _Complex float* iptr);
 
 extern void md_zfftmod(int D, const long dim[__VLA(D)], _Complex float* optr, const _Complex float* iptr, bool inv, double phase);
 extern void md_zfftmod2(int D, const long dim[__VLA(D)], const long ostr[__VLA(D)], _Complex float* optr, const long istr[__VLA(D)], const _Complex float* iptr, bool inv, double phase);

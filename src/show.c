@@ -8,8 +8,6 @@
  * 2015-2016 Jon Tamir
  */
 
-#define _GNU_SOURCE
-
 #include <stdbool.h>
 #include <complex.h>
 #include <stdio.h>
@@ -42,15 +40,23 @@ static void print_cfl(int N, const long dims[N], const complex float* data, cons
 
 	long T = md_calc_size(N, dims);
 
-	const char* allowed_fmts[2][4] = {
+	const char* allowed_fmts[2][8] = {
 	      { "%%+%*[0-9.]f%%+%*[0-9.]fi%n",
 		"%%+%*[0-9.]e%%+%*[0-9.]ei%n",
 		"%%+%*[0-9.]f,%%+%*[0-9.]f%n",
-		"%%+%*[0-9.]e,%%+%*[0-9.]e%n", },
+		"%%+%*[0-9.]e,%%+%*[0-9.]e%n",
+		"%%%*[0-9.]f%%+%*[0-9.]fi%n",
+		"%%%*[0-9.]e%%+%*[0-9.]ei%n",
+		"%%%*[0-9.]f,%%+%*[0-9.]f%n",
+		"%%%*[0-9.]e,%%+%*[0-9.]e%n", },
 	      { "%%+%*[0-9.]f%n",
 		"%%+%*[0-9.]e%n",
 		"%%+%*[0-9.]f%n",
-		"%%+%*[0-9.]e%n", },
+		"%%+%*[0-9.]e%n",
+		"%%%*[0-9.]f%n",
+		"%%%*[0-9.]e%n",
+		"%%%*[0-9.]f%n",
+		"%%%*[0-9.]e%n", },
 	};
 
 	// ensure that the input format string matches one of the valid format templates
@@ -106,7 +112,7 @@ int main_show(int argc, char* argv[argc])
 	const struct opt_s opts[] = {
 
 		OPT_SET('m', &meta, "show meta data"),
-		OPT_INT('d', &showdim, "dim", "show size of dimension"),
+		OPT_PINT('d', &showdim, "dim", "show size of dimension"),
 		OPT_SET('R', &real, "print only real part"),
 		OPT_SET('N', &index, "print index"),
 		OPT_STRING('s', &sep, "sep", "use <sep> as the separator"),

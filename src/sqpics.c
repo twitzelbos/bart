@@ -452,14 +452,14 @@ int main_sqpics(int argc, char* argv[argc])
 
 		if (NULL == traj_file) {
 
-			scaling = estimate_scaling(ksp_dims, NULL, kspace);
+			scaling = estimate_scaling(ksp_dims, NULL, kspace, -1);
 
 		} else {
 
 			complex float* adj = md_alloc(DIMS, img_dims, CFL_SIZE);
 
 			linop_adjoint(forward_op, DIMS, img_dims, adj, DIMS, ksp_dims, kspace);
-			scaling = estimate_scaling_norm(1., md_calc_size(DIMS, img_dims), adj, false);
+			scaling = estimate_scaling_norm(1., md_calc_size(DIMS, img_dims), adj, false, -1);
 
 			md_free(adj);
 		}
@@ -516,7 +516,7 @@ int main_sqpics(int argc, char* argv[argc])
 			minsize[1] = MIN(img_dims[1], 16);
 			minsize[2] = MIN(img_dims[2], 16);
 
-			unsigned int wflags = 0;
+			unsigned long wflags = 0UL;
 
 			for (int i = 0; i < DIMS; i++) {
 
@@ -726,17 +726,10 @@ int main_sqpics(int argc, char* argv[argc])
 	unmap_cfl(DIMS, map_dims, maps);
 	unmap_cfl(DIMS, ksp_dims, kspace);
 	unmap_cfl(DIMS, img_dims, image);
+	unmap_cfl(DIMS, traj_dims, traj);
+	unmap_cfl(DIMS, img_dims, image_truth);
 
-	if (NULL != traj)
-		unmap_cfl(DIMS, traj_dims, traj);
-
-	if (im_truth) {
-
-		xfree(image_truth_file);
-
-		unmap_cfl(DIMS, img_dims, image_truth);
-	}
-
+	xfree(image_truth_file);
 
 	double end_time = timestamp();
 
@@ -744,5 +737,4 @@ int main_sqpics(int argc, char* argv[argc])
 
 	return 0;
 }
-
 

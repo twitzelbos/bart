@@ -1,7 +1,3 @@
-/* Copyright 2013-2018. The Regents of the University of California.
- * All rights reserved. Use of this source code is governed by
- * a BSD-style license which can be found in the LICENSE file.
- */
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +48,7 @@ extern void cuda_zlog(long N, _Complex float* dst, const _Complex float* src);
 extern void cuda_zarg(long N, _Complex float* dst, const _Complex float* src);
 extern void cuda_zabs(long N, _Complex float* dst, const _Complex float* src);
 extern void cuda_zatanr(long N, _Complex float* dst, const _Complex float* src);
+extern void cuda_zatan2r(long N, _Complex float* dst, const _Complex float* src1, const _Complex float* src2);
 extern void cuda_zacosr(long N, _Complex float* dst, const _Complex float* src);
 extern void cuda_exp(long N, float* dst, const float* src);
 extern void cuda_log(long N, float* dst, const float* src);

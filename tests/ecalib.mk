@@ -9,6 +9,16 @@ tests/test-ecalib: ecalib pocsense nrmse $(TESTS_OUT)/shepplogan_coil_ksp.ra
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
+tests/test-ecalib-phase: ecalib fft fmac nrmse conj $(TESTS_OUT)/shepplogan_coil_ksp.ra
+	set -e ; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)					;\
+	$(TOOLDIR)/ecalib -N -m1 $(TESTS_OUT)/shepplogan_coil_ksp.ra coils.ra		;\
+	$(TOOLDIR)/fft -i 3 $(TESTS_OUT)/shepplogan_coil_ksp.ra cim.ra			;\
+	$(TOOLDIR)/fmac -s8 -C cim.ra coils.ra proj.ra					;\
+	$(TOOLDIR)/conj proj.ra projc.ra						;\
+	$(TOOLDIR)/nrmse -t 0.1 proj.ra projc.ra					;\
+	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
+	touch $@
+
 tests/test-ecalib-auto: ecalib pocsense nrmse noise $(TESTS_OUT)/shepplogan_coil_ksp.ra
 	set -e ; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP) ;\
 	$(TOOLDIR)/noise -n 100 $(TESTS_OUT)/shepplogan_coil_ksp.ra shepplogan_noise.ra ;\
@@ -48,7 +58,27 @@ tests/test-ecalib-gpu: ecalib pocsense nrmse $(TESTS_OUT)/shepplogan_coil_ksp.ra
 	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
 	touch $@
 
+tests/test-ecalib-econ: ecalib nrmse $(TESTS_OUT)/shepplogan_coil_ksp.ra
+	set -e ; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)					;\
+	$(TOOLDIR)/ecalib -m1 -e 1  $(TESTS_OUT)/shepplogan_coil_ksp.ra coils1.ra	;\
+	$(TOOLDIR)/ecalib -m1 -e -1 $(TESTS_OUT)/shepplogan_coil_ksp.ra coils2.ra	;\
+	$(TOOLDIR)/nrmse -t 0. coils1.ra coils2.ra					;\
+	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
+	touch $@
+
+tests/test-ecalib-nystroem: noise ecalib nrmse $(TESTS_OUT)/shepplogan_coil_ksp.ra
+	set -e ; mkdir $(TESTS_TMP) ; cd $(TESTS_TMP)					;\
+	$(TOOLDIR)/noise -n 400 $(TESTS_OUT)/shepplogan_coil_ksp.ra ksp.ra		;\
+	$(TOOLDIR)/ecalib -m1 -A -c0 ksp.ra coils1.ra					;\
+	$(TOOLDIR)/ecalib -m1    -c0 ksp.ra coils2.ra					;\
+	$(TOOLDIR)/nrmse -t 0.0002 coils1.ra coils2.ra					;\
+	rm *.ra ; cd .. ; rmdir $(TESTS_TMP)
+	touch $@
+
 
 TESTS += tests/test-ecalib tests/test-ecalib-auto tests/test-ecalib-rotation
 TESTS += tests/test-ecalib-rotation2
+TESTS += tests/test-ecalib-phase
+TESTS += tests/test-ecalib-econ
+TESTS += tests/test-ecalib-nystroem
 TESTS_GPU += tests/test-ecalib-gpu

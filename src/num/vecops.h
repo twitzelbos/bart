@@ -1,12 +1,6 @@
-/* Copyright 2013-2017. The Regents of the University of California.
- * Copyright 2016-2019. Martin Uecker.
- * Copyright 2017. University of Oxford.
- * All rights reserved. Use of this source code is governed by
- * a BSD-style license which can be found in the LICENSE file.
- */
 
-#ifndef __VECOPS_H
-#define __VECOPS_H
+#ifndef _VECOPS_H
+#define _VECOPS_H
 
 extern const struct vec_ops cpu_ops;
 
@@ -61,6 +55,7 @@ struct vec_ops {
 	void (*zarg)(long N, _Complex float* dst, const _Complex float* src);
 	void (*zabs)(long N, _Complex float* dst, const _Complex float* src);
 	void (*zatanr)(long N, _Complex float* dst, const _Complex float* src);
+	void (*zatan2r)(long N, _Complex float* dst, const _Complex float* src1, const _Complex float* src2);
 
 	void (*exp)(long N, float* dst, const float* src);
 	void (*log)(long N, float* dst, const float* src);
@@ -103,7 +98,6 @@ struct vec_ops {
 	void (*zfill)(long N, _Complex float val, _Complex float* dst);
 
 	void (*zsetnanzero)(long N, _Complex float* dst, const _Complex float* src);
-
 };
 
 #endif

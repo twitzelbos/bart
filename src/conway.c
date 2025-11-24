@@ -1,9 +1,6 @@
 /* Copyright 2021. Martin Uecker.
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
- *
- * Authors:
- * 2020 Martin Uecker
  */
 
 #include <complex.h>
@@ -41,7 +38,7 @@ int main_conway(int argc, char* argv[argc])
 	const struct opt_s opts[] = {
 
 		OPT_SET('P', &periodic, "periodic boundary conditions"),
-		OPT_INT('n', &iter, "#", "nr. of iterations"),
+		OPT_PINT('n', &iter, "#", "nr. of iterations"),
 	};
 
 	cmdline(&argc, argv, ARRAY_SIZE(args), args, help_str, ARRAY_SIZE(opts), opts);
@@ -109,3 +106,4 @@ int main_conway(int argc, char* argv[argc])
 
 	return 0;
 }
+

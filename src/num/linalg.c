@@ -81,7 +81,42 @@ void vecf_copy(int N, float x[N], const float y[N])
 		x[i] = y[i];
 }
 
+void vecf_saxpy(int N, float dst[N], float alpha, const float b[N])
+{
+	for (int i = 0; i < N; i++)
+		dst[i] += alpha * b[i];
+}
 
+float vecf_sdot(int N, const float a[N], const float b[N])
+{
+	float ret = 0.;
+
+	for (int i = 0; i < N; i++)
+		ret += a[i] * b[i];
+
+	return ret;
+}
+
+float vecf_norm(int N, const float x[N])
+{
+	return sqrtf(vecf_sdot(N, x, x));
+}
+
+#ifndef NO_LAPACK
+void matf_solve(int N, float x[N], const float m[N][N], const float y[N])
+{
+	float tmp[N][N];
+
+	for (int i = 0; i < N; i++)
+		for (int j = 0; j < N; j++)
+			tmp[i][j] = m[j][i];	// transpose
+
+	for (int i = 0; i < N; i++)
+		x[i] = y[i];
+
+	lapack_solve_real(N, tmp, x);
+}
+#endif
 
 void mat_gaussian(int A, int B, complex float x[A][B])
 {
@@ -157,10 +192,23 @@ void mat_mul(int A, int B, int C, complex float x[A][C], const complex float y[A
 }
 
 
+static
+void mat_minor(int N, int a, int b, complex float min[N - 1][N - 1], const complex float mat[N][N])
+{
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < N; j++) {
+
+			if (i == a || j == b)
+				continue;
+
+			min[i - (i > a)][j - (j > b)] = mat[i][j];
+		}
+	}
+}
+
+
 complex float mat_det(int N, const complex float mat[N][N])
 {
-	assert(N <= 2);
-
 	if (0 == N)
 		return 0.;
 
@@ -170,7 +218,17 @@ complex float mat_det(int N, const complex float mat[N][N])
 	if (2 == N)
 		return mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0];
 
-	return 0.;
+	complex float det = 0.;
+	complex float sub[N - 1][N - 1];
+
+	for (int i = 0; i < N; i++) {
+
+		mat_minor(N, i, 0, sub, mat);
+
+		det += ((0 == i % 2) ? 1. : -1.) * mat[i][0] * mat_det(N - 1, sub);
+	}
+
+	return det;
 }
 
 
@@ -634,8 +692,10 @@ void sqrtm_tri_matrix(int N, int blocksize, complex float out[N][N], const compl
 	}
 
 	// Within-Blocks interaction
-	for (int i = 0; i < (n_small + n_large); i++)
-		for (int j = pairs[i][0]; j < pairs[i][1]; j++)
+	for (int i = 0; i < (n_small + n_large); i++) {
+
+		for (int j = pairs[i][0]; j < pairs[i][1]; j++) {
+
 			for (int k = j - 1; k > (pairs[i][0] - 1); k--) {
 
 				complex float s = 0.;
@@ -655,6 +715,8 @@ void sqrtm_tri_matrix(int N, int blocksize, complex float out[N][N], const compl
 				else
 					error("Error in calculating matrix sqrt of triangular matrix.");
 			}
+		}
+	}
 
 	// Between-Blocks interaction
 	for (int i = 0; i < n_blocks; i++) {
@@ -730,11 +792,13 @@ float mat_onenorm_power(int N, int order, complex float A[N][N])
 	complex float A2[N][N];
 	complex float A3[N][N];
 
-	for (int i = 0; i < N; i++)
+	for (int i = 0; i < N; i++) {
+
 		for (int j = 0; j < N; j++) {
 
 			A2[i][j] = (i == j) ? A[i][j] - 1. : A[i][j];
 			A3[i][j] = A2[i][j];
+		}
 	}
 
 	// (A - I)^M
@@ -758,6 +822,7 @@ float mat_onenorm_power(int N, int order, complex float A[N][N])
 
 		norm = (norm < abs_sum) ? abs_sum : norm;
 	}
+
 	return norm;
 }
 
@@ -1037,7 +1102,7 @@ void logm_tri_matrix(int N, complex float out[N][N], const complex float in[N][N
 	// loop could be combined, but might be easier to understand in this form
 	for (int i = 0; i < N; i++)
 		for (int j = 0; j < N; j++)
-			out[i][j] *= pow(2, s);
+			out[i][j] *= pow(2., s);
 
 	// Recompute diagonal (FIXME: Add skipping option if principle branch exists?)
 	for (int i = 0; i < N; i++)
@@ -1372,22 +1437,28 @@ void thomas_algorithm(int N, complex float f[N], const complex float A[N][3], co
 		f[i] = e[i] - c[i] * f[i + 1];
 }
 
+
 // Recover real symmetric matrix from band representation
 void mat_band_reorder(int A, int B, double mat[A][A], double band[B][A], bool upper)
 {
 	int u = B - 1;
 
-	for (int i = 0; i < A; i++)
+	for (int i = 0; i < A; i++) {
 		for (int j = 0; j < A; j++) {
 
 			// Restore upper or lower triangular matrix from band matrix
-			if (u < abs(i - j))
+			if (u < abs(i - j)) {
+
 				mat[i][j] = 0.;
-			else {
+
+			} else {
+
 				if (upper) // Enforce symmetry
 					mat[i][j] = (i <= j) ? band[u + i - j][j] : band[u + j - i][i];
 				else // lower
 					mat[i][j] = (i >= j) ? band[i - j][j] : band[j - i][i];
 			}
 		}
+	}
 }
+

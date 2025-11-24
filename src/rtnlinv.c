@@ -90,7 +90,7 @@ int main_rtnlinv(int argc, char* argv[argc])
 
 	bool normalize = true;
 	bool combine = true;
-	unsigned int nmaps = 1;
+	int nmaps = 1;
 	float restrict_fov = -1.;
 	float temp_damp = 0.9f;
 	const char* psf = NULL;
@@ -116,7 +116,7 @@ int main_rtnlinv(int argc, char* argv[argc])
 		OPT_INT('d', &debug_level, "level", "Debug level"),
 		OPT_SET('c', &conf.rvc, "Real-value constraint"),
 		OPT_CLEAR('N', &normalize, "Do not normalize image with coil sensitivities"),
-		OPT_UINT('m', &nmaps, "nmaps", "Number of ENLIVE maps to use in reconstruction"),
+		OPT_PINT('m', &nmaps, "nmaps", "Number of ENLIVE maps to use in reconstruction"),
 		OPT_CLEAR('U', &combine, "Do not combine ENLIVE maps in output"),
 		OPT_FLOAT('f', &restrict_fov, "FOV", "restrict FOV"),
 		OPT_INFILE('p', &psf, "file", "pattern / transfer function"),
@@ -397,7 +397,6 @@ int main_rtnlinv(int argc, char* argv[argc])
 	}
 
 	struct linop_s* nufft_ops[turns];
-	const struct operator_s* fftc = NULL;
 
 	// analyzer false positive
 	for (int i = 0; i < turns; ++i)
@@ -425,7 +424,6 @@ int main_rtnlinv(int argc, char* argv[argc])
 
 		kgrid1 = md_alloc(DIMS, kgrid1_dims, CFL_SIZE);
 
-		fftc = fft_measure_create(DIMS, kgrid1_dims, FFT_FLAGS, true, false);
 		fftc_mod = md_alloc(DIMS, kgrid1_dims, CFL_SIZE);
 
 		md_zfill(DIMS, kgrid1_dims, fftc_mod, 1.);
@@ -465,7 +463,7 @@ int main_rtnlinv(int argc, char* argv[argc])
 			linop_adjoint(nufft_ops[frame % turns], DIMS, kgrid1_dims, kgrid1, DIMS, ksp1_dims, kspace1);
 #if 1
 			md_zmul(DIMS, kgrid1_dims, kgrid1, kgrid1, fftc_mod);
-			fft_exec(fftc, kgrid1, kgrid1);
+			fft(DIMS, kgrid1_dims, FFT_FLAGS, kgrid1, kgrid1);
 			md_zmul(DIMS, kgrid1_dims, kgrid1, kgrid1, fftc_mod);
 			fftscale(DIMS, kgrid1_dims, FFT_FLAGS, kgrid1, kgrid1);
 #else
@@ -558,8 +556,6 @@ int main_rtnlinv(int argc, char* argv[argc])
 		md_free(fftc_mod);
 
 		unmap_cfl(DIMS, trj_dims, traj);
-
-		operator_free(fftc);
 
 		for (int i = 0; i < turns; ++i)
 			linop_free(nufft_ops[i]);
